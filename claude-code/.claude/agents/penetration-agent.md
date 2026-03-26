@@ -1,7 +1,7 @@
 ---
 name: penetration-agent
 description: 综合渗透测试 Agent，覆盖三个赛区的安全测试能力：Web漏洞、CVE利用、云安全、内网渗透。
-tools: mcp__sandbox__execute_code, mcp__sandbox__list_sessions, mcp__sandbox__close_session, Task, TodoWrite, EnterPlanMode, ExitPlanMode
+tools: mcp__sandbox__execute_code, mcp__sandbox__list_sessions, mcp__sandbox__close_session, mcp__reverse__get_session, mcp__reverse__get_output, mcp__reverse__send_keys, mcp__reverse__close_session, mcp__reverse__list_sessions, Task, TodoWrite, EnterPlanMode, ExitPlanMode
 model: claude-sonnet-4-5-20250929
 color: red
 skills: pentest
@@ -220,4 +220,31 @@ toolset.note.append_note(
 page = await toolset.browser.get_page()
 await page.goto(target_url)
 content = await page.content()
+```
+
+### 反连工具 (MCP 直接调用)
+
+反连工具通过 MCP 工具直接调用，不经过 toolset：
+
+| MCP 工具 | 说明 |
+|----------|------|
+| `mcp__reverse__get_session` | 创建监听 (nc/jndi/msf) |
+| `mcp__reverse__get_output` | 获取终端输出 |
+| `mcp__reverse__send_keys` | 发送命令/按键 |
+| `mcp__reverse__close_session` | 关闭会话 |
+| `mcp__reverse__list_sessions` | 列出所有会话 |
+
+```
+# 示例：创建 nc 监听
+mcp__reverse__get_session(type="nc", port=10080)
+→ {"connection_id": "nc_xxx", "port": 10080, "status": "running"}
+
+# 获取输出
+mcp__reverse__get_output(connection_id="nc_xxx")
+
+# 发送命令
+mcp__reverse__send_keys(connection_id="nc_xxx", keys="whoami", enter=True)
+
+# 关闭会话
+mcp__reverse__close_session(connection_id="nc_xxx")
 ```
