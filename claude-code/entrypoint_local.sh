@@ -13,7 +13,7 @@ source .venv/bin/activate
 export LLM_ID="LLM-1"
 export NOTE_PATH="/opt/notes"
 export NOTEBOOK_PATH="/opt/scripts"
-export WORKSPACE="/opt/workspace"
+export WORKSPACE_PATH="/opt/workspace"
 
 # docker
 # source ~/.myrc
