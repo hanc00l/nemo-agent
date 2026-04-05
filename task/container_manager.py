@@ -65,7 +65,9 @@ class ContainerManager:
         self,
         challenge_code: str,
         target_url: str,
-        llm_configs: List[Dict]
+        llm_configs: List[Dict],
+        description: str = "",
+        hint: str = "",
     ) -> List[str]:
         """
         启动挑战的所有容器，并在容器中执行解题任务
@@ -74,6 +76,8 @@ class ContainerManager:
             challenge_code: 挑战代码
             target_url: 目标 URL
             llm_configs: LLM 配置列表
+            description: 赛题描述（来自平台 API）
+            hint: 提示内容（来自平台 hint API）
 
         Returns:
             启动的容器名称列表
@@ -148,7 +152,9 @@ class ContainerManager:
                         container=container,
                         challenge_code=challenge_code,
                         target_url=target_url,
-                        container_name=container_name
+                        container_name=container_name,
+                        description=description,
+                        hint=hint,
                     )
 
             except Exception as e:
@@ -175,7 +181,9 @@ class ContainerManager:
         container: Container,
         challenge_code: str,
         target_url: str,
-        container_name: str
+        container_name: str,
+        description: str = "",
+        hint: str = "",
     ):
         """
         在容器中异步执行解题任务
@@ -185,6 +193,8 @@ class ContainerManager:
             challenge_code: 挑战代码
             target_url: 目标 URL
             container_name: 容器名称
+            description: 赛题描述
+            hint: 提示内容
         """
         def run_task():
             try:
@@ -213,7 +223,12 @@ class ContainerManager:
                     return
 
                 # 3. 构建任务提示词
-                task = build_task_prompt(target_url, challenge_code, competition_mode=True)
+                task = build_task_prompt(
+                    target_url, challenge_code,
+                    competition_mode=True,
+                    description=description,
+                    hint=hint,
+                )
                 print(f"{log_prefix} [+] 开始执行解题任务...")
 
                 # 4. 执行 Claude 任务

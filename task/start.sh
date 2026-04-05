@@ -1,6 +1,6 @@
 #!/bin/bash
 
 
-# 启动 CTF 解题记录 Web UI
+# 启动调度
 source .venv/bin/activate
 python3 scheduler.py

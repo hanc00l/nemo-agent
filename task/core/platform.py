@@ -1,9 +1,11 @@
 """
 Platform - 竞赛平台 API 客户端
 
-提供从竞赛平台获取挑战的功能。
+适配第二届腾讯云黑客松智能渗透挑战赛 API。
+认证方式: Agent-Token 请求头。
 """
 import os
+import time
 from typing import List, Dict, Optional
 from dataclasses import dataclass
 
@@ -13,15 +15,15 @@ class PlatformConfig:
     """平台配置"""
     api_url: str
     timeout: int = 30
-    token: Optional[str] = None
+    agent_token: str = ""
 
     @classmethod
     def from_env(cls) -> "PlatformConfig":
         """从环境变量加载配置"""
         return cls(
-            api_url=os.getenv("COMPETITION_API_URL", "http://172.17.103.95:8888"),
+            api_url=os.getenv("COMPETITION_API_URL", "http://host.docker.internal"),
             timeout=int(os.getenv("API_TIMEOUT", "30")),
-            token=os.getenv("COMPETITION_API_TOKEN"),
+            agent_token=os.getenv("AGENT_TOKEN", "") or os.getenv("COMPETITION_API_TOKEN", ""),
         )
 
 
@@ -29,86 +31,157 @@ class PlatformClient:
     """竞赛平台 API 客户端"""
 
     def __init__(self, config: Optional[PlatformConfig] = None):
-        """
-        初始化平台客户端
-
-        Args:
-            config: 平台配置，默认从环境变量加载
-        """
         self.config = config or PlatformConfig.from_env()
+        self._last_request_time: float = 0
 
-    def fetch_challenges(self, refresh: bool = True) -> Optional[List[Dict]]:
-        """
-        从平台获取挑战列表
+    def _rate_limit(self):
+        """频率控制：请求间隔 >= 0.5s"""
+        elapsed = time.time() - self._last_request_time
+        if elapsed < 0.5:
+            time.sleep(0.5 - elapsed)
+        self._last_request_time = time.time()
 
-        Args:
-            refresh: 是否强制刷新
+    def _headers(self) -> Dict[str, str]:
+        """构建请求头（始终包含 Agent-Token）"""
+        return {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "Agent-Token": self.config.agent_token,
+        }
 
-        Returns:
-            挑战列表，失败时返回 None
-        """
+    def _request(self, method: str, path: str, **kwargs) -> Optional[Dict]:
+        """统一请求方法，含频率限制和 429 重试"""
         try:
             import requests
 
-            url = f"{self.config.api_url}/api/v1/challenges"
-            headers = {"Content-Type": "application/json", "Accept": "application/json"}
+            self._rate_limit()
+            url = f"{self.config.api_url.rstrip('/')}/api{path}"
 
-            if self.config.token:
-                headers["Authorization"] = f"Bearer {self.config.token}"
+            # 429 重试（最多 3 次）
+            max_retries = 3
+            for attempt in range(max_retries):
+                resp = requests.request(
+                    method, url,
+                    headers=self._headers(),
+                    timeout=self.config.timeout,
+                    **kwargs
+                )
 
-            resp = requests.get(url, headers=headers, timeout=self.config.timeout)
+                if resp.status_code == 429:
+                    retry_after = int(resp.headers.get("Retry-After", "1"))
+                    wait_time = min(retry_after, 2)
+                    print(f"[WARN] 429 频率限制，等待 {wait_time}s (第 {attempt + 1}/{max_retries} 次)")
+                    time.sleep(wait_time)
+                    continue
+                break
+            else:
+                # 所有重试都用完
+                print(f"[ERROR] 429 重试耗尽: {method} {path}")
+                return None
+
             resp.raise_for_status()
-
             data = resp.json()
-            challenges = data.get("challenges", [])
 
-            return challenges
+            if data.get("code") != 0:
+                print(f"[WARN] API 返回错误: code={data.get('code')}, message={data.get('message')}")
+                return None
 
-        except ImportError:
-            # requests 未安装
-            return None
+            return data.get("data", data)
+
         except Exception as e:
-            # 网络错误或 API 错误
+            print(f"[ERROR] API 请求失败: {method} {path} - {e}")
             return None
 
-    def get_unsolved_challenges(self, refresh: bool = True) -> List[Dict]:
+    def fetch_challenges(self, refresh: bool = True) -> Optional[List[Dict]]:
         """
-        获取未解决的挑战
-
-        Args:
-            refresh: 是否强制刷新
+        从平台获取赛题列表
 
         Returns:
-            未解决的挑战列表
+            赛题列表，失败时返回 None
         """
+        data = self._request("GET", "/challenges")
+        if data is None:
+            return None
+        return data.get("challenges", []) if isinstance(data, dict) else []
+
+    def start_instance(self, code: str) -> Optional[List[str]]:
+        """
+        启动赛题实例
+
+        Args:
+            code: 赛题唯一标识
+
+        Returns:
+            入口地址列表，失败时返回 None
+        """
+        data = self._request("POST", "/start_challenge", json={"code": code})
+        if data is None:
+            return None
+        # 已完成的情况
+        if isinstance(data, dict) and data.get("already_completed"):
+            return []
+        return data if isinstance(data, list) else []
+
+    def stop_instance(self, code: str) -> bool:
+        """
+        停止赛题实例
+
+        Args:
+            code: 赛题唯一标识
+
+        Returns:
+            是否成功
+        """
+        result = self._request("POST", "/stop_challenge", json={"code": code})
+        return result is not None
+
+    def submit_flag(self, code: str, flag: str) -> Optional[Dict]:
+        """
+        提交 FLAG
+
+        Args:
+            code: 赛题唯一标识
+            flag: FLAG 字符串
+
+        Returns:
+            {"correct": bool, "flag_count": int, "flag_got_count": int, "message": str}
+        """
+        return self._request("POST", "/submit", json={"code": code, "flag": flag})
+
+    def get_hint(self, code: str) -> Optional[str]:
+        """
+        获取赛题提示
+
+        Args:
+            code: 赛题唯一标识
+
+        Returns:
+            提示内容，失败时返回 None
+        """
+        data = self._request("POST", "/hint", json={"code": code})
+        if data and isinstance(data, dict):
+            return data.get("hint_content")
+        return None
+
+    def get_unsolved_challenges(self, refresh: bool = True) -> List[Dict]:
+        """获取未完成的赛题 (flag_got_count < flag_count)"""
         challenges = self.fetch_challenges(refresh)
         if not challenges:
             return []
+        return [c for c in challenges if c.get("flag_got_count", 0) < c.get("flag_count", 1)]
 
-        return [c for c in challenges if not c.get("solved", False)]
-
-    def get_target_url(self, challenge_code: str, refresh: bool = True) -> Optional[str]:
-        """
-        获取挑战的目标 URL
-
-        Args:
-            challenge_code: 挑战代码
-            refresh: 是否强制刷新
-
-        Returns:
-            目标 URL，未找到时返回 None
-        """
+    def get_target_url(self, code: str, refresh: bool = True) -> Optional[str]:
+        """获取赛题目标 URL"""
         challenges = self.fetch_challenges(refresh)
         if not challenges:
             return None
 
         for c in challenges:
-            if c.get("challenge_code") == challenge_code:
-                target_info = c.get("target_info", {})
-                ip = target_info.get("ip", "")
-                ports = target_info.get("port", [])
-
-                if ip and ports:
-                    return f"http://{ip}:{ports[0]}"
-
+            if c.get("code") == code:
+                entrypoint = c.get("entrypoint") or []
+                if entrypoint:
+                    addr = entrypoint[0]
+                    if not addr.startswith("http"):
+                        addr = f"http://{addr}"
+                    return addr
         return None
