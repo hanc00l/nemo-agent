@@ -2,6 +2,7 @@
 Solver - 自动化CTF Web Agent (支持多LLM并行解题)
 
 基于 core 模块实现的多 LLM 并行解题框架。
+适配第二届腾讯云黑客松智能渗透挑战赛 API。
 """
 import os
 import argparse
@@ -48,11 +49,8 @@ def extract_flag(text: str) -> Optional[str]:
     Returns:
         找到的 FLAG 或 None
     """
-    # 常见 FLAG 格式
     patterns = [
-        r'FLAG\{[^}]+\}',
         r'flag\{[^}]+\}',
-        r'CTF\{[^}]+\}',
         r'ctf\{[^}]+\}',
     ]
 
@@ -65,7 +63,7 @@ def extract_flag(text: str) -> Optional[str]:
 
 def submit_flag_to_platform(challenge_code: str, flag: str) -> bool:
     """
-    向竞赛平台提交 FLAG
+    向竞赛平台提交 FLAG（通过 PlatformClient，含频率控制）
 
     Args:
         challenge_code: 题目代码
@@ -75,26 +73,25 @@ def submit_flag_to_platform(challenge_code: str, flag: str) -> bool:
         提交是否成功
     """
     try:
-        import requests
+        from core.platform import PlatformClient
+        # 复用模块级实例，保证跨调用的频率控制
+        if not hasattr(submit_flag_to_platform, '_client'):
+            submit_flag_to_platform._client = PlatformClient()
+        client = submit_flag_to_platform._client
+        result = client.submit_flag(challenge_code, flag)
+        if result is None:
+            print(f"[-] 提交请求失败")
+            return False
 
-        competition_url = os.getenv("COMPETITION_API_URL", "http://host.docker.internal:8888")
-        submit_url = f"{competition_url}/api/v1/answer"
-
-        response = requests.post(
-            submit_url,
-            json={"challenge_code": challenge_code, "answer": flag},
-            timeout=10
-        )
-        response.raise_for_status()
-        data = response.json()
-
-        if data.get("correct"):
-            print(f"[+] 提交成功! FLAG: {flag}")
-            print(f"[+] 获得积分: {data.get('earned_points', 0)}")
+        correct = result.get("correct", False)
+        if correct:
+            message = result.get("message", "")
+            print(f"[+] 提交成功! {message}")
             return True
         else:
             print(f"[-] 提交失败: FLAG 不正确")
             return False
+
     except Exception as e:
         print(f"[-] 提交出错: {e}")
         return False
@@ -119,7 +116,7 @@ class CTFSolveRunner:
 
         # VNC 端口 (仅在启用 VNC 时分配)
         self.vnc_port = None
-        vnc_base_port = get_vnc_base_port()  # 始终获取 base_port
+        vnc_base_port = get_vnc_base_port()
         if not self.no_vision:
             self.vnc_port = get_vnc_port(llm_id, vnc_base_port, challenge_code)
 
@@ -162,12 +159,10 @@ class CTFSolveRunner:
     def __del__(self):
         """析构函数，安全清理资源"""
         try:
-            # 检查 Python 是否正在关闭
             import sys
             if sys is not None and sys.meta_path is not None:
                 self.cleanup()
         except Exception:
-            # 忽略清理时的任何错误（Python 可能正在关闭）
             pass
 
     def run_task(self, task: str, stop_event: threading.Event) -> dict:
@@ -200,15 +195,15 @@ if __name__ == "__main__":
     )
 
     # 目标相关参数
-    parser.add_argument('--target', required=False, type=str, help='单个目标 URL 或 IP:端口')
-    parser.add_argument('--challenge_code', type=str, help='题目代码 (challenge_code)，用于关联笔记和记录')
+    parser.add_argument('--target', required=True, type=str, help='单个目标 URL 或 IP:端口')
+    parser.add_argument('--challenge_code', required=True,type=str, help='题目代码 (code)，用于关联笔记和记录')
     parser.add_argument('--competition', action='store_true', help='启用竞赛模式（解题成功后自动提交答案）')
 
     args = parser.parse_args()
 
     # 1. 解析 MAX_LLM 参数
     max_llm = int(os.getenv("MAX_LLM", "1"))
-    max_llm = min(max_llm, 3)  # 最多 3 个
+    max_llm = min(max_llm, 3)
     print(f"[+] 配置的 MAX_LLM: {max_llm}")
 
     # 2. 加载 LLM 配置 (使用 core 模块)

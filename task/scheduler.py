@@ -1,7 +1,8 @@
 """
 Scheduler - CTF 挑战调度器
 
-自动从竞赛平台获取挑战，管理容器生命周期，监控超时和容器健康。
+自动从竞赛平台获取挑战，管理平台实例和本地容器生命周期。
+双层管理：平台 API 管理赛题实例 + 本地 Docker 管理解题 Agent。
 """
 import os
 import sys
@@ -36,7 +37,7 @@ from core import (
 
 
 class ChallengeScheduler:
-    """CTF 挑战调度器"""
+    """CTF 挑战调度器（双层管理：平台实例 + 本地容器）"""
 
     def __init__(self, config: SchedulerConfig):
         self.config = config
@@ -69,24 +70,19 @@ class ChallengeScheduler:
         """获取 PID 文件锁（防止多进程运行）"""
         import fcntl
 
-        # PID 文件路径
         pid_file_path = os.path.join(
             os.path.dirname(self.config.STATE_FILE),
             "scheduler.pid"
         )
 
         try:
-            # 打开/创建 PID 文件
             self._pid_file = open(pid_file_path, "w")
-            # 尝试获取排他锁（非阻塞）
             fcntl.flock(self._pid_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-            # 写入当前 PID
             self._pid_file.write(str(os.getpid()))
             self._pid_file.flush()
             self._pid_lock = True
             self.logger.info(f"PID 文件锁已获取: {pid_file_path}", "init")
         except IOError:
-            # 锁获取失败，说明已有实例在运行
             self._pid_file.close()
             self._pid_file = None
             raise RuntimeError(
@@ -98,9 +94,7 @@ class ChallengeScheduler:
         """释放 PID 文件锁"""
         if self._pid_file is not None:
             try:
-                # 关闭文件会自动释放锁
                 self._pid_file.close()
-                # 删除 PID 文件
                 pid_file_path = self._pid_file.name
                 if os.path.exists(pid_file_path):
                     os.remove(pid_file_path)
@@ -132,7 +126,7 @@ class ChallengeScheduler:
         self.logger.info("正在停止调度器...", "stop")
         self.running = False
 
-        # 停止所有容器
+        # 停止所有容器和平台实例
         self._stop_all_containers()
 
         # 释放 PID 文件锁
@@ -147,9 +141,8 @@ class ChallengeScheduler:
         while self.running:
             try:
                 # 1. 从平台获取挑战
-                platform_challenges = self.platform.fetch_challenges()
+                platform_challenges = self._fetch_platform_challenges()
                 if platform_challenges is None:
-                    # 网络错误，等待后重试
                     self._sleep_interruptible(self.config.FETCH_INTERVAL)
                     continue
 
@@ -161,10 +154,9 @@ class ChallengeScheduler:
                     self.logger.info(f"移除 {len(sync_result['removed'])} 个挑战", "fetch")
                 if sync_result["solved"]:
                     self.logger.info(f"平台确认解决 {len(sync_result['solved'])} 个挑战", "fetch")
-                    # 立即清理已解决挑战的容器
                     for challenge_code in sync_result["solved"]:
-                        self.container_manager.stop_challenge_containers(challenge_code)
-                        self.logger.info(f"已清理挑战 {challenge_code} 的容器", "cleanup")
+                        self._stop_challenge_full(challenge_code)
+                        self.logger.info(f"已清理已解决挑战 {challenge_code}", "cleanup")
                 if sync_result["recovered"]:
                     self.logger.info(f"恢复 {len(sync_result['recovered'])} 个挑战", "fetch")
 
@@ -174,19 +166,14 @@ class ChallengeScheduler:
                 # 4. 检查超时
                 self._check_timeouts()
 
-                # 5. 维护容器
-                self._maintain_containers()
+                # 5. 维护容器（传入平台数据避免重复请求）
+                self._maintain_containers(platform_challenges)
 
                 # 6. 清理已完成状态的容器
                 self._cleanup_finished_containers()
 
                 # 7. 启动新挑战
                 self._start_new_challenges()
-
-                # 7. 清理旧的已完成挑战 (已禁用 - 永久保留所有记录)
-                # removed = self.state_manager.cleanup_old_challenges(max_age_hours=24)
-                # if removed > 0:
-                #     self.logger.info(f"清理 {removed} 个旧挑战", "cleanup")
 
             except Exception as e:
                 self.logger.error(f"主循环出错: {e}", "error")
@@ -197,20 +184,56 @@ class ChallengeScheduler:
 
         self.logger.info("调度器主循环结束", "main")
 
-    def _sleep_interruptible(self, duration: float):
-        """
-        可中断的睡眠
+    def _fetch_platform_challenges(self) -> Optional[List[Dict]]:
+        """从平台获取挑战列表（适配新 API 字段）"""
+        try:
+            data = self.platform.fetch_challenges()
+            if data is None:
+                return None
 
-        Args:
-            duration: 睡眠时长（秒）
-        """
-        # 将睡眠分成小块，每块检查运行状态
-        chunk_size = 0.5  # 每500ms检查一次
+            # 将新 API 字段映射为内部格式
+            challenges = []
+            for c in data:
+                challenges.append({
+                    "code": c.get("code", ""),
+                    "challenge_code": c.get("code", ""),  # 兼容字段
+                    "title": c.get("title", ""),
+                    "description": c.get("description", ""),
+                    "difficulty": c.get("difficulty", "unknown"),
+                    "level": c.get("level", 0),
+                    "total_score": c.get("total_score", 0),
+                    "total_got_score": c.get("total_got_score", 0),
+                    "flag_count": c.get("flag_count", 0),
+                    "flag_got_count": c.get("flag_got_count", 0),
+                    "hint_viewed": c.get("hint_viewed", False),
+                    "instance_status": c.get("instance_status", "stopped"),
+                    "entrypoint": c.get("entrypoint") or [],
+                })
+
+            return challenges
+
+        except Exception as e:
+            self.logger.error(f"获取平台挑战失败: {e}", "fetch")
+            return None
+
+    def _sleep_interruptible(self, duration: float):
+        """可中断的睡眠"""
+        chunk_size = 0.5
         elapsed = 0
         while self.running and elapsed < duration:
             sleep_time = min(chunk_size, duration - elapsed)
             time.sleep(sleep_time)
             elapsed += sleep_time
+
+    def _stop_challenge_full(self, challenge_code: str):
+        """完全停止挑战：本地容器 + 平台实例"""
+        # 停止本地容器
+        self.container_manager.stop_challenge_containers(challenge_code)
+        # 停止平台实例
+        try:
+            self.platform.stop_instance(challenge_code)
+        except Exception as e:
+            self.logger.warn(f"停止平台实例 {challenge_code} 失败: {e}", "cleanup")
 
     def _check_solved_challenges(self):
         """检查已解决的挑战"""
@@ -218,13 +241,8 @@ class ChallengeScheduler:
 
         for challenge in started:
             challenge_code = challenge.challenge_code
-
-            # 检查容器是否还在运行
             statuses = self.container_manager.get_container_status(challenge_code)
             if not statuses:
-                # 所有容器都已停止
-                # 注意：容器停止不代表任务失败，可能只是正常结束
-                # 不要自动标记为失败，让超时检查和平台同步来处理
                 self.logger.info(f"挑战 {challenge_code} 的容器已停止（等待平台确认或超时）", "check")
 
     def _check_timeouts(self):
@@ -244,27 +262,69 @@ class ChallengeScheduler:
                 )
                 self._transition_to_fail(challenge.challenge_code, "timeout")
 
-    def _maintain_containers(self):
-        """维护容器健康"""
+    def _maintain_containers(self, platform_challenges: Optional[List[Dict]] = None):
+        """维护容器健康（双层：检查平台实例 + 本地容器）"""
         started = self.state_manager.get_challenges_by_state(STATE_STARTED)
 
         for challenge in started:
             challenge_code = challenge.challenge_code
 
-            # 检查容器状态
+            # 1. 检查平台实例是否仍在运行
+            instance_alive = True
+            if platform_challenges:
+                try:
+                    pc = next((c for c in platform_challenges if c.get("code") == challenge_code), None)
+                    if pc:
+                        instance_status = pc.get("instance_status", "stopped")
+                        if instance_status != "running":
+                            instance_alive = False
+                            self.logger.warn(
+                                f"挑战 {challenge_code} 平台实例状态为 {instance_status}，尝试重新启动",
+                                "container"
+                            )
+                            # 尝试重新启动平台实例
+                            entrypoint = self.platform.start_instance(challenge_code)
+                            if entrypoint:
+                                target_url = entrypoint[0]
+                                if not target_url.startswith("http"):
+                                    target_url = f"http://{target_url}"
+                                self.state_manager.update_state(
+                                    challenge_code,
+                                    STATE_STARTED,
+                                    target_url=target_url,
+                                    entrypoint=entrypoint,
+                                    instance_status="running",
+                                )
+                                instance_alive = True
+                                self.logger.info(f"平台实例重新启动成功: {target_url}", "container")
+                            else:
+                                self.logger.error(f"平台实例重新启动失败: {challenge_code}", "container")
+                    else:
+                        instance_alive = False
+                        self.logger.warn(f"挑战 {challenge_code} 不在平台列表中", "container")
+                except Exception as e:
+                    self.logger.warn(f"检查平台实例状态失败: {e}", "container")
+
+            if not instance_alive:
+                # 平台实例不可用，不重建本地容器，等待超时或平台同步处理
+                continue
+
+            # 2. 检查本地容器状态
             statuses = self.container_manager.get_container_status(challenge_code)
 
             if not statuses:
-                # 没有容器，需要重新创建
                 self.logger.warn(f"挑战 {challenge_code} 没有运行的容器，重新创建", "container")
                 try:
+                    # 刷新 challenge 数据（target_url 可能已更新）
+                    challenge = self.state_manager.get_challenge(challenge_code) or challenge
                     container_names = self.container_manager.start_challenge_containers(
                         challenge_code=challenge_code,
                         target_url=challenge.target_url,
-                        llm_configs=self.config.llm_configs
+                        llm_configs=self.config.llm_configs,
+                        description=challenge.description or "",
+                        hint=challenge.hint_content or "",
                     )
                     self.logger.info(f"重新创建容器成功: {container_names}", "container")
-                    # 更新容器列表
                     self.state_manager.update_state(
                         challenge_code,
                         STATE_STARTED,
@@ -273,42 +333,34 @@ class ChallengeScheduler:
                 except Exception as e:
                     self.logger.error(f"重新创建容器失败: {e}", "container")
             else:
-                # 有容器，尝试重启已停止的
                 restarted = self.container_manager.restart_dead_containers(challenge_code)
                 if restarted:
                     self.logger.info(f"重启 {len(restarted)} 个容器: {challenge_code}", "container")
 
     def _cleanup_finished_containers(self):
         """清理已完成状态（close、fail、success）的容器"""
-        # 检查 close、fail、success 状态
         finished_states = [STATE_CLOSE, STATE_FAIL, STATE_SUCCESS]
 
         for state in finished_states:
             challenges = self.state_manager.get_challenges_by_state(state)
             for challenge in challenges:
                 challenge_code = challenge.challenge_code
-
-                # 检查是否还有容器在运行
                 statuses = self.container_manager.get_container_status(challenge_code)
                 if statuses:
-                    # 有容器还在运行，需要清理
                     self.logger.info(f"清理 {state} 状态的容器: {challenge_code}", "container")
-                    self.container_manager.stop_challenge_containers(challenge_code)
+                    self._stop_challenge_full(challenge_code)
 
     def _start_new_challenges(self):
-        """启动新挑战"""
-        # 获取当前运行中的数量
+        """启动新挑战（双层：先启动平台实例，再启动本地容器）"""
         started = self.state_manager.get_challenges_by_state(STATE_STARTED)
         running_count = len(started)
 
         if running_count >= self.config.MAX_PARALLEL:
             return
 
-        # 获取待处理的挑战，按获取时间排序
         open_challenges = self.state_manager.get_challenges_by_state(STATE_OPEN)
         open_challenges.sort(key=lambda c: c.fetched_at)
 
-        # 启动新挑战
         for challenge in open_challenges:
             if running_count >= self.config.MAX_PARALLEL:
                 break
@@ -317,54 +369,95 @@ class ChallengeScheduler:
                 running_count += 1
 
     def _transition_to_started(self, challenge: ChallengeStateData) -> bool:
-        """转换状态为 started"""
+        """转换状态为 started（双层：启动平台实例 + 本地容器）"""
         challenge_code = challenge.challenge_code
 
         try:
             self.logger.info(f"启动挑战: {challenge_code}", "start")
 
-            # 启动容器
+            # 1. 启动平台赛题实例
+            entrypoint = self.platform.start_instance(challenge_code)
+            if entrypoint is None:
+                self.logger.error(f"启动平台实例失败: {challenge_code}", "start")
+                return False
+
+            if not entrypoint:
+                self.logger.info(f"赛题 {challenge_code} 已全部完成", "start")
+                self.state_manager.update_state(
+                    challenge_code,
+                    STATE_SUCCESS,
+                    result="already_completed"
+                )
+                return False
+
+            # 构建 target_url
+            target_url = entrypoint[0]
+            if not target_url.startswith("http"):
+                target_url = f"http://{target_url}"
+
+            self.logger.info(f"平台实例入口: {target_url}", "start")
+
+            # 2. 获取提示信息（启动后立即获取，扣 10% 分数但提高解题效率）
+            hint_content = ""
+            hint_viewed = False
+            try:
+                hint_content = self.platform.get_hint(challenge_code) or ""
+                hint_viewed = True
+                if hint_content:
+                    self.logger.info(f"获取提示成功: {challenge_code}", "start")
+                else:
+                    self.logger.info(f"无提示内容: {challenge_code}", "start")
+            except Exception as e:
+                self.logger.warn(f"获取提示失败（不影响解题）: {e}", "start")
+
+            # 3. 启动本地 Docker 容器（解题 Agent，含描述和提示）
             container_names = self.container_manager.start_challenge_containers(
                 challenge_code=challenge_code,
-                target_url=challenge.target_url,
-                llm_configs=self.config.llm_configs
+                target_url=target_url,
+                llm_configs=self.config.llm_configs,
+                description=challenge.description or "",
+                hint=hint_content,
             )
 
-            # 更新状态
+            # 4. 更新状态
             now = get_timestamp()
             self.state_manager.update_state(
                 challenge_code,
                 STATE_STARTED,
                 started_at=now,
-                containers=container_names
+                containers=container_names,
+                target_url=target_url,
+                instance_status="running",
+                entrypoint=entrypoint,
+                hint_content=hint_content,
+                hint_viewed=hint_viewed,
             )
 
             self.logger.info(
-                f"挑战 {challenge_code} 已启动，容器: {container_names}",
+                f"挑战 {challenge_code} 已启动，入口: {target_url}，容器: {container_names}",
                 "start"
             )
             return True
 
         except Exception as e:
             self.logger.error(f"启动挑战 {challenge_code} 失败: {e}", "start")
-            # 容器启动失败时不立即标记为 fail，保持 open 状态等待重试
-            # 只记录失败信息到 result 字段
+            # 停止可能已启动的平台实例
+            try:
+                self.platform.stop_instance(challenge_code)
+            except Exception:
+                pass
             self.state_manager.update_state(
                 challenge_code,
-                STATE_OPEN,  # 保持 open 状态
+                STATE_OPEN,
                 result=f"start_failed: {e}",
-                containers=[]  # 清空容器列表
+                containers=[]
             )
             return False
 
     def _transition_to_fail(self, challenge_code: str, reason: str):
-        """转换状态为 fail"""
+        """转换状态为 fail（同时清理平台实例和本地容器）"""
         self.logger.warn(f"挑战 {challenge_code} 失败: {reason}", "fail")
-
-        # 停止容器
-        self.container_manager.stop_challenge_containers(challenge_code)
-
-        # 更新状态
+        self._stop_challenge_full(challenge_code)
         self.state_manager.update_state(
             challenge_code,
             STATE_FAIL,
@@ -373,13 +466,9 @@ class ChallengeScheduler:
         )
 
     def _transition_to_close(self, challenge_code: str):
-        """转换状态为 close"""
+        """转换状态为 close（同时清理平台实例和本地容器）"""
         self.logger.info(f"关闭挑战: {challenge_code}", "close")
-
-        # 停止容器
-        self.container_manager.stop_challenge_containers(challenge_code)
-
-        # 更新状态
+        self._stop_challenge_full(challenge_code)
         self.state_manager.update_state(
             challenge_code,
             STATE_CLOSE,
@@ -387,20 +476,21 @@ class ChallengeScheduler:
         )
 
     def _stop_all_containers(self):
-        """停止所有容器"""
-        self.logger.info("停止所有容器...", "shutdown")
+        """停止所有容器和平台实例"""
+        self.logger.info("停止所有容器和平台实例...", "shutdown")
 
-        # 停止所有 started 挑战的容器，但不改变状态
-        # 这样调度器重启后可以继续处理这些挑战
         started = self.state_manager.get_challenges_by_state(STATE_STARTED)
         for challenge in started:
             challenge_code = challenge.challenge_code
-            # 只停止容器，保持状态为 started
-            # 调度器重启后会检测到容器已停止，可以重新启动
+            # 停止本地容器
             self.container_manager.stop_challenge_containers(challenge_code)
-            self.logger.info(f"已停止 {challenge_code} 的容器（状态保持为 started）", "shutdown")
+            # 停止平台实例
+            try:
+                self.platform.stop_instance(challenge_code)
+            except Exception:
+                pass
+            self.logger.info(f"已停止 {challenge_code}（状态保持为 started）", "shutdown")
 
-        # 清理已停止的容器
         cleaned = self.container_manager.cleanup_stopped_containers()
         if cleaned > 0:
             self.logger.info(f"清理 {cleaned} 个已停止的容器", "shutdown")
@@ -455,11 +545,9 @@ def main():
     # 运行
     try:
         if args.once:
-            # 只运行一次
             scheduler.logger.info("单次运行模式")
             scheduler.run()
         else:
-            # 持续运行
             scheduler.start()
     except KeyboardInterrupt:
         scheduler.logger.info("用户中断")
