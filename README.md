@@ -1,6 +1,6 @@
 # Nemo Agent
 
-[![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)](https://github.com/hanc00l/nemo-agent)
+[![Version](https://img.shields.io/badge/version-0.2.0-blue.svg)](https://github.com/hanc00l/nemo-agent)
 
 基于 Claude Code 的自动化渗透测试 Agent，达到中高级网络安全专家水平。
 
@@ -9,7 +9,8 @@
 ## 特性
 
 - **多 LLM 并行**：支持 1-3 个 LLM 并行解题，提高成功率
-- **自动化调度**：从竞赛平台自动获取挑战，管理容器生命周期
+- **双层调度**：平台实例管理 + 本地 Docker 容器，自动恢复中断任务
+- **自动化调度**：从竞赛平台自动获取挑战，管理全生命周期
 - **沙盒隔离**：每个挑战运行在独立 Docker 容器中
 - **实时监控**：Web UI 实时查看解题过程与结果
 - **笔记系统**：自动记录信息收集、推理分析、最终结果
@@ -20,12 +21,23 @@
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                      CTF 平台 API                            │
+│          (认证: Agent-Token, 频率: ≤3 req/s)                 │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                   task/scheduler.py                         │
-│               挑战调度器 (并行=3, 超时=2400s)                  │
+│            挑战调度器 (双层管理)                               │
+│                                                              │
+│  ┌──────────────────────┐  ┌──────────────────────────────┐ │
+│  │   平台实例管理         │  │   本地容器管理                 │ │
+│  │ start/stop instance  │  │ Docker 容器生命周期            │ │
+│  │ get_hint             │  │ 容器健康检查与自动恢复          │ │
+│  │ submit_flag          │  │ 死容器重启                    │ │
+│  └──────────────────────┘  └──────────────────────────────┘ │
+│                                                              │
+│  状态持久化: subjects.json (线程安全, 文件锁)                  │
+│  频率控制: PlatformClient._rate_limit (0.5s间隔)              │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -90,6 +102,7 @@ LLM-1-ANTHROPIC_MODEL=claude-sonnet-4-6
 
 # 竞赛平台
 COMPETITION_API_URL=http://192.168.52.1:8888
+AGENT_TOKEN=your_agent_token_here
 
 # LLM 数量 (1-3)
 MAX_LLM=1
@@ -103,9 +116,11 @@ python3 scheduler.py
 ```
 
 调度器会自动：
-- 从竞赛平台获取挑战
-- 为每题创建 Docker 容器
-- 监控超时和容器健康
+- 从竞赛平台获取挑战列表
+- 启动平台赛题实例，获取入口地址
+- 为每题创建 Docker 容器（含描述和提示）
+- 监控超时、容器健康、平台实例状态
+- 中断重启后自动恢复（重建平台实例 + 本地容器）
 - 记录结果到 `data/subjects.json`
 
 ### 4. 查看 Web UI
@@ -124,6 +139,9 @@ python3 manage.py runserver 0.0.0.0:8003
 ```bash
 cd task
 python3 scheduler.py
+
+# 单次运行（不循环）
+python3 scheduler.py --once
 ```
 
 ### 单一解题模式
@@ -159,9 +177,23 @@ claude --print --dangerously-skip-permissions \
 
 ## 核心功能
 
+### 双层调度管理
+
+调度器管理两个层级：
+
+| 层级 | 职责 | API |
+|------|------|-----|
+| 平台实例 | 赛题靶机启停、状态查询 | `start_instance` / `stop_instance` |
+| 本地容器 | 解题 Agent 运行环境 | Docker 容器管理 |
+
+**重启恢复机制**：调度器中断后重启，`_maintain_containers` 会：
+1. 检查平台实例是否存活，已停止则尝试重启
+2. 检查本地容器是否运行，丢失则重建
+3. 并行计数基于持久化的 `subjects.json`，确保不超限
+
 ### challenge_code
 
-题目的唯一标识符，关联 Jupyter 会话和笔记存储。
+题目的唯一标识符，关联 Jupyter 会话和笔记存储。来源：竞赛平台 / 用户指定 / URL 生成
 
 ### Note 笔记系统
 
@@ -170,6 +202,18 @@ claude --print --dangerously-skip-permissions \
 | info | `{code}-info.md` | 信息收集 |
 | infer | `{code}-infer.md` | 推理分析 |
 | result | `{code}-result.md` | 最终结果 |
+
+笔记存储路径：由 `NOTE_PATH` 环境变量配置（默认 `/opt/notes`）
+
+API:
+- `get_notes_summary(code)` - 读取摘要
+- `append_note(code, type, content)` - 追加笔记
+
+### 平台 API 频率控制
+
+- 内置频率限制：每次请求间隔 >= 0.5s（≤ 2 req/s）
+- 429 自动重试：最多 3 次，支持 Retry-After 响应头
+- 认证方式：Agent-Token 请求头
 
 ### 安全工具
 
@@ -196,10 +240,14 @@ nemo-agent/
 │   │   └── toolset/            # 工具库
 │   └── tests/                  # 测试代码
 ├── task/                       # 任务调度系统
-│   ├── scheduler.py            # 挑战调度器
+│   ├── scheduler.py            # 挑战调度器（双层管理）
 │   ├── solver.py               # 求解器
-│   ├── core/                   # 核心模块
+│   ├── challenge_state.py      # 状态管理（线程安全）
 │   ├── config.py               # 配置管理
+│   ├── core/                   # 核心模块
+│   │   ├── platform.py         # 平台 API 客户端（含频率控制）
+│   │   ├── container.py        # 容器管理
+│   │   └── ...                 # 日志、信号、LLM 等
 │   └── data/                   # 数据目录
 └── web-ui/                     # Web 可视化界面
     └── app/                    # Django 应用
@@ -213,11 +261,12 @@ nemo-agent/
 |------|------|--------|
 | `MAX_LLM` | LLM 数量 (1-3) | 1 |
 | `MAX_PARALLEL` | 最大并行挑战数 | 3 |
-| `TIMEOUT_SECONDS` | 单挑战超时 (秒) | 2400 |
+| `TIMEOUT_SECONDS` | 单挑战超时 (秒) | 3600 |
 | `FETCH_INTERVAL` | 平台获取间隔 (秒) | 60 |
 | `DOCKER_IMAGE` | Docker 镜像 | nemo-agent/sandbox:1.0 |
+| `NOTE_PATH` | 笔记存储路径 | /opt/notes |
 | `NO_VISION` | 禁用 VNC | true |
-
+| `AGENT_TOKEN` | 平台认证令牌 | - |
 
 ### 独立Ubuntu运行环境（可选，主要用于调试用）
 
@@ -232,6 +281,7 @@ nemo-agent/
 
 - 仅用于授权的安全测试和 CTF 竞赛
 - 所有代码在 Docker 容器中隔离执行
+- 平台 API 频率限制为 ≤3 req/s，调度器内置 0.5s 间隔保护
 - 解题记录和笔记使用中文
 
 ## 参考资源

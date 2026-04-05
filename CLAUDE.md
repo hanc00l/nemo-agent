@@ -36,6 +36,8 @@ API:
 - `get_notes_summary(code)` - 读取摘要
 - `append_note(code, type, content)` - 追加笔记
 
+笔记存储路径由 `NOTE_PATH` 环境变量配置，容器内默认 `/opt/notes`。
+
 ### Competition 平台 API
 
 | 函数 | 用途 |
@@ -44,6 +46,8 @@ API:
 | `get_target_url(code)` | 获取目标 URL |
 | `get_hint(code)` | 获取提示（扣分） |
 | `submit_answer(code, flag)` | 提交 FLAG |
+
+**频率控制**: 平台限制 ≤3 req/s。`PlatformClient._rate_limit` 内置 0.5s 间隔保护，429 响应自动重试（最多 3 次）。
 
 ### Browser 浏览器工具
 
@@ -69,6 +73,42 @@ Playwright 自动化：页面访问、交互、截图、JS 执行
 | whatweb | 技术栈 | `whatweb -a 3 http://target` |
 
 **字典**: `/usr/share/seclists/Discovery/Web-Content/`
+
+## 调度系统
+
+### 双层管理
+
+调度器（`task/scheduler.py`）管理两个层级：
+
+1. **平台实例**：通过竞赛平台 API 启停赛题靶机（`start_instance` / `stop_instance`）
+2. **本地容器**：Docker 容器运行解题 Agent，含题目描述和提示信息
+
+### 主循环流程
+
+```
+每个周期（FETCH_INTERVAL=60s）:
+  1. 获取平台挑战列表 → sync_with_platform
+  2. 同步本地状态 → 新增/移除/已解决/恢复
+  3. 检查已解决挑战 → 容器状态
+  4. 检查超时 → _transition_to_fail
+  5. 维护容器 → 检查平台实例 + 本地容器健康
+  6. 清理已完成容器 → stop_challenge_full
+  7. 启动新挑战 → _transition_to_started
+```
+
+### 中断恢复
+
+调度器重启后从 `subjects.json` 恢复状态：
+- `started` 状态的题目：检查平台实例存活 → 必要时重启 → 重建本地容器
+- 并行计数基于 JSON 中 `started` 记录数，确保不超 `MAX_PARALLEL`
+- `open` 状态的题目：继续排队等待启动
+
+### 状态管理
+
+`ChallengeStateManager` 提供线程安全的 JSON 状态管理：
+- 文件锁（fcntl）+ 内存锁（threading.Lock）
+- 原子读写操作
+- 状态文件：`task/data/subjects.json`
 
 ## 重要规则
 
