@@ -36,6 +36,16 @@ elif [ -d "$WORKSPACE/chisel" ] && [ -f "$WORKSPACE/chisel/chisel" ]; then
     ln -sf "$WORKSPACE/chisel/chisel" "$TARGET_DIR/chisel"
 fi
 
+# NetExec (nxc)
+ln -sf "$WORKSPACE/NetExec/nxc"                    "$TARGET_DIR/nxc"
+
+# sqlmap (需要 python3 wrapper，因为 shebang 是 python 而非 python3)
+cat > "$TARGET_DIR/sqlmap" << 'EOF'
+#!/bin/bash
+exec python3 /opt/workspace/sqlmap-dev/sqlmap.py "$@"
+EOF
+chmod +x "$TARGET_DIR/sqlmap"
+
 # === 漏洞利用工具 ===
 
 # wsh (直接二进制)
@@ -49,7 +59,7 @@ ln -sf "$WORKSPACE/rem/rem"                      "$TARGET_DIR/rem"
 # JNDIExploit
 cat > "$TARGET_DIR/JNDIExploit" << 'EOF'
 #!/bin/bash
-exec java -jar /opt/workspace/JNDIExploit/JNDIExploit-1.2-SNAPSHOT.jar "$@"
+exec java -jar /opt/workspace/JNDIExploit/JNDIExploit.jar "$@"
 EOF
 chmod +x "$TARGET_DIR/JNDIExploit"
 
@@ -76,13 +86,18 @@ EOF
     chmod +x "$TARGET_DIR/neoreg"
 fi
 
+# === 字典软链接（大小写兼容） ===
+if [ -d "$WORKSPACE/SecLists" ] && [ ! -L "$WORKSPACE/seclists" ]; then
+    ln -sf "$WORKSPACE/SecLists" "$WORKSPACE/seclists"
+fi
+
 # === 验证 ===
 
 echo ""
 echo "[+] Symlink 创建完成，验证结果："
 echo ""
 
-TOOLS="observer_ward katana ffuf fscan TideFinger nuclei frpc frps stowaway_admin stowaway_agent wsh rem JNDIExploit JYso shiro_cli"
+TOOLS="observer_ward katana ffuf fscan nuclei frpc frps stowaway_admin stowaway_agent chisel wsh nxc sqlmap JNDIExploit JYso shiro_cli neoreg"
 
 for tool in $TOOLS; do
     if command -v "$tool" &>/dev/null; then
