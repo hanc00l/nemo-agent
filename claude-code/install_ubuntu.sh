@@ -140,10 +140,7 @@ log_step "[3/8] 安装 Metasploit Framework..."
 
 if ! command -v msfconsole &> /dev/null; then
     log_info "安装 metasploit-framework (较大，需要一些时间)..."
-    curl -sL "https://raw.githubusercontent.com/rapid7/metasploit-omnibus/master/config/templates/metasploit-framework-wrappers/msfupdate.erb" > /tmp/msfinstall && \
-    chmod 755 /tmp/msfinstall && \
-    $SUDO /tmp/msfinstall
-    rm -f /tmp/msfinstall
+    $SUDO snap install metasploit-framework
     log_info "metasploit 已安装"
 else
     log_info "metasploit 已存在"
