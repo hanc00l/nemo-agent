@@ -68,7 +68,7 @@ class ChallengeRepository:
                 'challenge_code': challenge_data.get('challenge_code'),
                 'target_url': challenge_data.get('target_url'),
                 'difficulty': challenge_data.get('difficulty'),
-                'points': challenge_data.get('points'),
+                'points': challenge_data.get('total_score') or 0,
                 'state': challenge_data.get('state'),
                 'fetched_at': challenge_data.get('fetched_at'),
                 'started_at': challenge_data.get('started_at'),
@@ -134,7 +134,7 @@ class ChallengeRepository:
             if state in stats:
                 stats[state] += 1
 
-            points = c.get('points', 0)
+            points = c.get('points') or 0
             stats['total_points'] += points
 
             if state == 'success':
@@ -183,10 +183,10 @@ class ChallengeRepository:
 class NoteRepository:
     """笔记数据仓库
 
-    NOTES_DIR: 宿主机路径 ~/notes（自动展开，自动创建）
+    NOTES_DIR: 宿主机路径
     """
 
-    NOTES_DIR = os.path.expanduser("~/notes")
+    NOTES_DIR = settings.NOTES_DIR
 
     @staticmethod
     def get_note(challenge_code: str, note_type: str) -> str:

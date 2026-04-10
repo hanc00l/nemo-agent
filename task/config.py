@@ -21,10 +21,11 @@ class SchedulerConfig:
     TIMEOUT_SECONDS: int = 3600       # Per-challenge timeout
 
     # Platform settings
-    COMPETITION_API_URL: str = "http://172.17.103.95:8888"
+    COMPETITION_API_URL: str = "http://host.docker.internal"
+    AGENT_TOKEN: str = ""             # Agent Token for API auth
 
     # Container settings
-    DOCKER_IMAGE: str = "nemo-agent/sandbox:1.1"
+    DOCKER_IMAGE: str = "nemo-agent/sandbox:1.0"
     MAX_LLM: int = 3                  # Number of LLM agents per challenge
     VNC_BASE_PORT: int = 55900        # VNC port = VNC_BASE_PORT + llm_id
 
@@ -53,10 +54,11 @@ class SchedulerConfig:
         fetch_interval = int(os.getenv("FETCH_INTERVAL", "60"))
         max_parallel = int(os.getenv("MAX_PARALLEL", "3"))
         timeout_seconds = int(os.getenv("TIMEOUT_SECONDS", "3600"))
-        competition_api_url = os.getenv("COMPETITION_API_URL", "http://172.17.103.95:8888")
+        competition_api_url = os.getenv("COMPETITION_API_URL", "http://host.docker.internal")
+        agent_token = os.getenv("AGENT_TOKEN", "") or os.getenv("COMPETITION_API_TOKEN", "")
 
         # Container settings
-        docker_image = os.getenv("DOCKER_IMAGE", "nemo-agent/sandbox:1.1")
+        docker_image = os.getenv("DOCKER_IMAGE", "nemo-agent/sandbox:1.0")
         max_llm = int(os.getenv("MAX_LLM", "3"))
         vnc_base_port = int(os.getenv("VNC_BASE_PORT", "55900"))
 
@@ -73,6 +75,7 @@ class SchedulerConfig:
             MAX_PARALLEL=max_parallel,
             TIMEOUT_SECONDS=timeout_seconds,
             COMPETITION_API_URL=competition_api_url,
+            AGENT_TOKEN=agent_token,
             DOCKER_IMAGE=docker_image,
             MAX_LLM=max_llm,
             VNC_BASE_PORT=vnc_base_port,

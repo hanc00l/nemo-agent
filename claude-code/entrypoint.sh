@@ -7,14 +7,6 @@ export BROWSER_PORT=9222
 export MCP_PORT=8000
 export COMPETITION_API_URL=${COMPETITION_API_URL:-http://host.docker.internal:8888}
 
-# local
-# source .venv/bin/activate
-
-# export LLM_ID="LLM-1"
-# export NOTE_PATH="/opt/notes"
-# export NOTEBOOK_PATH="/opt/scripts"
-# export WORKSPACE="/opt/workspace"
-
 # docker
 source ~/.myrc
 

@@ -36,6 +36,8 @@ API:
 - `get_notes_summary(code)` - 读取摘要
 - `append_note(code, type, content)` - 追加笔记
 
+笔记存储路径由 `NOTE_PATH` 环境变量配置，容器内默认 `/opt/notes`。
+
 ### Competition 平台 API
 
 | 函数 | 用途 |
@@ -44,6 +46,8 @@ API:
 | `get_target_url(code)` | 获取目标 URL |
 | `get_hint(code)` | 获取提示（扣分） |
 | `submit_answer(code, flag)` | 提交 FLAG |
+
+**频率控制**: 平台限制 ≤3 req/s。`PlatformClient._rate_limit` 内置 0.5s 间隔保护，429 响应自动重试（最多 3 次）。
 
 ### Browser 浏览器工具
 
@@ -58,28 +62,68 @@ Playwright 自动化：页面访问、交互、截图、JS 执行
 
 - `run_command(cmd, timeout)` / `get_output()` / `is_running()`
 
-### Reverse 反连工具 (MCP)
-
-反连工具管理器，支持 nc/jndi/msf 多连接并发：
-
-- `mcp__reverse__get_session(type, port?)` - 创建监听 (nc/jndi/msf)
-- `mcp__reverse__get_output(connection_id)` - 获取终端输出
-- `mcp__reverse__send_keys(connection_id, keys)` - 发送命令
-- `mcp__reverse__close_session(connection_id)` - 关闭会话
-- `mcp__reverse__list_sessions()` - 列出所有会话
-
-默认监听 IP: 192.168.52.101，NC 默认端口: 10080
 
 ## 安全工具
+
+### apt 安装工具
 
 | 工具 | 用途 | 命令 |
 |------|------|------|
 | nmap | 端口扫描 | `nmap -sV -n -T4 --open target` |
-| ffuf | 模糊测试 | `ffuf -u 'http://target/FUZZ' -w wordlist` |
-| katana | 网页爬取 | `katana -u http://target -d 3 -jc` |
-| whatweb | 技术栈 | `whatweb -a 3 http://target` |
+| whatweb | 技术栈识别 | `whatweb -a 3 http://target` |
+| sqlmap | SQL 注入 | `sqlmap -u "http://target/page?id=1" --dbs` |
+| hydra | 暴力破解 | `hydra -l user -P pass.txt target ssh` |
+| hashcat | 密码破解 | `hashcat -m 0 hash.txt wordlist` |
+| proxychains4 | 代理链 | `proxychains4 nmap target` |
+| weevely | PHP Webshell | `weevely generate <pass> <path>` |
 
-**字典**: `/usr/share/seclists/Discovery/Web-Content/`
+### 其他安装工具
+
+| 工具 | 来源 | 用途 | 命令 |
+|------|------|------|------|
+| ffuf | /opt/workspace | 模糊测试 | `ffuf -u 'http://target/FUZZ' -w wordlist` |
+| katana | /opt/workspace | 网页爬取 | `katana -u http://target -d 3 -jc` |
+| observer_ward | /opt/workspace | 技术栈识别 | `observer_ward -t http://target` |
+| nuclei | /opt/workspace | 漏洞扫描 | `nuclei -u http://target` |
+| msfconsole | omnibus 安装 | 漏洞利用 | `msfconsole` |
+
+**字典**: `/opt/workspace/SecLists/Discovery/Web-Content/`
+
+## 调度系统
+
+### 双层管理
+
+调度器（`task/scheduler.py`）管理两个层级：
+
+1. **平台实例**：通过竞赛平台 API 启停赛题靶机（`start_instance` / `stop_instance`）
+2. **本地容器**：Docker 容器运行解题 Agent，含题目描述和提示信息
+
+### 主循环流程
+
+```
+每个周期（FETCH_INTERVAL=60s）:
+  1. 获取平台挑战列表 → sync_with_platform
+  2. 同步本地状态 → 新增/移除/已解决/恢复
+  3. 检查已解决挑战 → 容器状态
+  4. 检查超时 → _transition_to_fail
+  5. 维护容器 → 检查平台实例 + 本地容器健康
+  6. 清理已完成容器 → stop_challenge_full
+  7. 启动新挑战 → _transition_to_started
+```
+
+### 中断恢复
+
+调度器重启后从 `subjects.json` 恢复状态：
+- `started` 状态的题目：检查平台实例存活 → 必要时重启 → 重建本地容器
+- 并行计数基于 JSON 中 `started` 记录数，确保不超 `MAX_PARALLEL`
+- `open` 状态的题目：继续排队等待启动
+
+### 状态管理
+
+`ChallengeStateManager` 提供线程安全的 JSON 状态管理：
+- 文件锁（fcntl）+ 内存锁（threading.Lock）
+- 原子读写操作
+- 状态文件：`task/data/subjects.json`
 
 ## 重要规则
 
@@ -93,6 +137,15 @@ Playwright 自动化：页面访问、交互、截图、JS 执行
 | 使用中文 | 记录和输出使用中文 |
 
 ## 运行方式
+
+### Ubuntu 独立环境安装
+
+```bash
+cd claude-code
+sudo ./install_ubuntu.sh
+```
+
+安装内容：基础工具、Chrome、渗透测试工具(apt)、Metasploit、Docker(阿里云镜像源)、Python 依赖、sudo 免密码。
 
 ### 调度器模式（推荐）
 

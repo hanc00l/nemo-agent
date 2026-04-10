@@ -6,6 +6,8 @@ export VNC_PORT=${VNC_PORT:-5901}
 export BROWSER_PORT=9222
 export MCP_PORT=8000
 export COMPETITION_API_URL=http://192.168.52.1:8888
+export NO_VISION=true
+export REVERSE_IP="192.168.52.101"
 
 # local
 source .venv/bin/activate
@@ -13,7 +15,7 @@ source .venv/bin/activate
 export LLM_ID="LLM-1"
 export NOTE_PATH="/opt/notes"
 export NOTEBOOK_PATH="/opt/scripts"
-export WORKSPACE="/opt/workspace"
+export WORKSPACE_PATH="/opt/workspace"
 
 # docker
 # source ~/.myrc

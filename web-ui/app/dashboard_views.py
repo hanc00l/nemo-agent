@@ -96,7 +96,7 @@ def dashboard_page(request):
 
             avg_seconds = total_seconds / len(success_challenges_with_time)
             avg_time = f"{int(avg_seconds // 60)}分{int(avg_seconds % 60)}秒"
-        except:
+        except Exception:
             pass
 
     context = {
@@ -224,7 +224,7 @@ def api_challenge_detail(request, challenge_code):
             elapsed = now - start
             elapsed_seconds = elapsed.total_seconds()
             elapsed_time = f"{int(elapsed_seconds // 60)}分{int(elapsed_seconds % 60)}秒"
-        except:
+        except Exception:
             pass
 
     return JsonResponse({
@@ -302,7 +302,7 @@ def challenge_detail_page(request, challenge_code):
             elapsed = now - start
             elapsed_seconds = elapsed.total_seconds()
             elapsed_time = f"{int(elapsed_seconds // 60)}分{int(elapsed_seconds % 60)}秒"
-        except:
+        except Exception:
             pass
 
     context = {

@@ -499,7 +499,7 @@ def close_session(session_name: Annotated[str, "要关闭的会话名称（chall
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Python 执行器 MCP 服务")
     parser.add_argument("--port", type=int, default=8000, help="服务端口（默认: 8000）")
-    parser.add_argument('--host', type=str, default='0.0.0.0', help="监听地址（默认: 0.0.0.0）")
+    parser.add_argument('--host', type=str, default='127.0.0.1', help="监听地址（默认: 127.0.0.1）")
     args = parser.parse_args()
 
     mcp.run(transport="streamable-http", host=args.host, port=args.port, stateless_http=True)

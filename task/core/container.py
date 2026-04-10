@@ -11,7 +11,7 @@ from typing import Dict, Optional, Tuple
 
 
 # 默认配置
-DEFAULT_DOCKER_IMAGE = "nemo-agent/sandbox:1.1"
+DEFAULT_DOCKER_IMAGE = "nemo-agent/sandbox:1.0"
 DEFAULT_VNC_BASE_PORT = 55900
 
 
@@ -28,6 +28,11 @@ def get_scripts_dir() -> str:
     os.makedirs(scripts_dir, exist_ok=True)
     return scripts_dir
 
+def get_workspace_dir() -> str:
+    """获取宿主机 workspace 目录路径（优先使用环境变量 WORKSPACE_PATH）"""
+    workspace_dir = os.getenv("WORKSPACE_PATH", "") or "/opt/workspace"
+    os.makedirs(workspace_dir, exist_ok=True)
+    return workspace_dir
 
 # 卷挂载配置（get_volumes() 会动态设置 notes 和 scripts 路径）
 # 容器内路径保持绝对路径不变
@@ -48,10 +53,12 @@ def get_volumes() -> Dict[str, Dict]:
     # 动态添加 notes 和 scripts 卷（使用环境变量或默认值）
     notes_dir = get_notes_dir()
     scripts_dir = get_scripts_dir()
+    workspace_dir = get_workspace_dir()
 
     expanded_volumes = {
         notes_dir: {"bind": "/opt/notes", "mode": "rw"},
         scripts_dir: {"bind": "/opt/scripts", "mode": "rw"},
+        workspace_dir: {"bind": "/opt/workspace", "mode": "rw"},
     }
 
     for host_path, config in volumes.items():
@@ -101,7 +108,8 @@ def get_container_name(challenge_code: str, llm_id: int) -> str:
     return f"{challenge_code}-LLM-{llm_id}"
 
 
-def build_task_prompt(target_url: str, challenge_code: str, competition_mode: bool = False) -> str:
+def build_task_prompt(target_url: str, challenge_code: str, competition_mode: bool = False,
+                      description: str = "", hint: str = "") -> str:
     """
     构建任务提示词
 
@@ -109,22 +117,31 @@ def build_task_prompt(target_url: str, challenge_code: str, competition_mode: bo
         target_url: 目标 URL
         challenge_code: 挑战代码
         competition_mode: 是否为竞赛模式（需要提交答案）
+        description: 赛题描述（来自平台 API）
+        hint: 提示内容（来自平台 hint API）
 
     Returns:
         任务提示词字符串
     """
     base_prompt = (
-        f"使用 ctf-web-agent 完成挑战：\n"
+        f"使用penetration-agent，启动综合渗透测试 Agent 解决安全挑战，请对指定的信息进行渗透测试并获取flag：\n"
         f"**目标信息**: {target_url}\n"
-        f"**题目代码 (challenge_code)**: {challenge_code}\n"
+        f"**题目代码 (code)**: {challenge_code}\n"
     )
+
+    if description:
+        base_prompt += f"**题目描述**: {description}\n"
+
+    if hint:
+        base_prompt += f"**提示信息**: {hint}\n"
 
     if competition_mode:
         base_prompt += (
             f"\n**重要**: 这是一个竞赛模式任务！\n"
             f"1. 获取 FLAG 后，必须使用 toolset.competition.submit_answer() 提交答案\n"
-            f"2. 竞赛平台 URL: {os.getenv('COMPETITION_API_URL', 'http://host.docker.internal:8888')}\n"
-            f"3. 提交成功后，将结果保存到笔记 (note_type='result')\n"
+            f"2. 竞赛平台 URL: 从环境变量 COMPETITION_API_URL 读取\n"
+            f"3. 认证 Token: 从环境变量 AGENT_TOKEN 读取（已注入容器环境变量）\n"
+            f"4. 提交成功后，将结果保存到笔记 (note_type='result')\n"
         )
 
     return base_prompt
@@ -162,12 +179,14 @@ def prepare_container_config(
         "LLM_ID": f"LLM-{llm_id}",  # 添加 LLM 标识，方便在笔记和日志中区分
         "NOTE_PATH": "/opt/notes",  # 容器内的笔记路径
         "NOTEBOOK_PATH": "/opt/scripts",  # 容器内的 notebook 路径
+        "WORKSPACE_PATH":  "/opt/workspace",  # 工作目录
     }
 
-    # 竞赛模式：添加竞赛平台 URL
+    # 竞赛模式：添加竞赛平台 URL + Agent Token
     if competition_mode:
-        competition_url = os.getenv("COMPETITION_API_URL", "http://host.docker.internal:8888")
-        environment["COMPETITION_API_URL"] = competition_url
+        environment["COMPETITION_API_URL"] = os.getenv("COMPETITION_API_URL", "http://host.docker.internal")
+        agent_token = os.getenv("AGENT_TOKEN", "") or os.getenv("COMPETITION_API_TOKEN", "")
+        environment["AGENT_TOKEN"] = agent_token  # 始终注入，空值时 competition.py 会警告
 
     # 如果启用 VNC，添加 VNC 端口配置
     if no_vision:

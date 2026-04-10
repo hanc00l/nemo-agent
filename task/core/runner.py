@@ -13,7 +13,7 @@ from dataclasses import dataclass
 import threading
 
 # 默认配置
-DEFAULT_DOCKER_IMAGE = "nemo-agent/sandbox:1.1"
+DEFAULT_DOCKER_IMAGE = "nemo-agent/sandbox:1.0"
 DEFAULT_VNC_BASE_PORT = 55900
 # 容器内工作目录（绝对路径）
 DEFAULT_WORKDIR = "/opt/nemo-agent/claude-code"
@@ -227,7 +227,7 @@ def execute_claude_task(
         TaskResult 对象
     """
     if log_prefix:
-        print(f"{log_prefix} [+] 正在启动 ctf-web-agent...")
+        print(f"{log_prefix} [+] 正在启动 agent...")
 
     res = container.exec_run(
         ["claude", "--dangerously-skip-permissions", "--print", task],

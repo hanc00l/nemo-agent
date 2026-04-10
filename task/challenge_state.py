@@ -2,12 +2,13 @@
 Challenge State - 挑战状态管理
 
 线程安全的 JSON 状态管理，支持文件锁和原子写入。
+适配第二届腾讯云黑客松智能渗透挑战赛 API。
 """
 import os
 import fcntl
 import json
 import time
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timezone
 from threading import Lock
@@ -19,18 +20,28 @@ class ChallengeStateData:
     challenge_code: str
     target_url: str
     difficulty: str
-    points: int
+    level: int
+    total_score: int
+    total_got_score: int
+    flag_count: int
+    flag_got_count: int
     state: str  # open, started, success, fail, close
     fetched_at: str  # ISO format timestamp
+    title: str = ""
     started_at: Optional[str] = None
     updated_at: Optional[str] = None
     timeout_seconds: int = 3600
-    containers: List[str] = None
+    containers: List[str] = field(default_factory=list)
     result: Optional[str] = None
+    hint_viewed: bool = False
+    hint_content: Optional[str] = None
+    description: Optional[str] = None
+    instance_status: str = "stopped"
+    entrypoint: List[str] = field(default_factory=list)
 
-    def __post_init__(self):
-        if self.containers is None:
-            self.containers = []
+    @property
+    def is_solved(self) -> bool:
+        return self.flag_got_count >= self.flag_count
 
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
@@ -69,7 +80,6 @@ class ChallengeStateManager:
             try:
                 content = f.read()
                 if not content.strip():
-                    # Empty file, return initial state
                     return {
                         "version": "1.0",
                         "last_updated": datetime.now(timezone.utc).isoformat(),
@@ -80,20 +90,7 @@ class ChallengeStateManager:
                 fcntl.flock(f.fileno(), fcntl.LOCK_UN)
 
     def _read_state_locked(self) -> tuple[Dict[str, Any], Any]:
-        """
-        读取状态文件并保持排他锁（用于原子更新）
-
-        Returns:
-            (data, file_object): 数据和保持锁的文件对象
-
-        注意：调用者必须关闭文件对象以释放锁！
-        推荐使用上下文管理器：
-
-            with self._read_and_lock() as (data, f):
-                # 修改 data
-                ...
-                self._write_state_locked(data, f)
-        """
+        """读取状态文件并保持排他锁"""
         f = open(self.state_file, "r+")
         fcntl.flock(f.fileno(), fcntl.LOCK_EX)
         try:
@@ -112,7 +109,6 @@ class ChallengeStateManager:
 
     def _write_state(self, data: Dict[str, Any]):
         """写入状态文件（原子写入 + 排他锁）"""
-        # 写入临时文件
         temp_file = f"{self.state_file}.tmp"
         with open(temp_file, "w") as f:
             fcntl.flock(f.fileno(), fcntl.LOCK_EX)
@@ -122,55 +118,24 @@ class ChallengeStateManager:
                 os.fsync(f.fileno())
             finally:
                 fcntl.flock(f.fileno(), fcntl.LOCK_UN)
-
-        # 原子重命名
         os.rename(temp_file, self.state_file)
 
     def _write_state_locked(self, data: Dict[str, Any], f):
-        """
-        写入状态文件到已锁定的文件对象
-
-        Args:
-            data: 要写入的数据
-            f: 已持有排他锁的文件对象（来自 _read_and_lock）
-        """
-        # 截断文件并写入新数据
+        """写入状态文件到已锁定的文件对象"""
         f.seek(0)
         f.truncate()
         json.dump(data, f, indent=2, ensure_ascii=False)
         f.flush()
         os.fsync(f.fileno())
-        # 注意：不关闭文件，不释放锁
-        # 调用者负责关闭文件并释放锁
 
     def _atomic_update(self, updater_func) -> Any:
-        """
-        原子更新状态文件（在整个读-修改-写周期内持有文件锁）
-
-        Args:
-            updater_func: 函数，接收 (data)，修改并可选地返回结果
-
-        Returns:
-            updater_func 的返回值
-
-        这个方法确保：
-        1. 读取时获取排他锁
-        2. 修改过程中保持锁
-        3. 写入时保持锁
-        4. 只有在写入完成后才释放锁
-
-        这样可以防止其他进程/线程在读取和写入之间修改数据。
-        """
-        # 读取并获取锁
+        """原子更新状态文件"""
         data, f = self._read_state_locked()
         try:
-            # 调用更新函数修改数据（可返回结果）
             result = updater_func(data)
-            # 写入数据（锁仍然保持）
             self._write_state_locked(data, f)
             return result
         finally:
-            # 关闭文件，释放锁
             f.close()
 
     def get_all_challenges(self) -> Dict[str, ChallengeStateData]:
@@ -191,7 +156,12 @@ class ChallengeStateManager:
                 return ChallengeStateData.from_dict(challenge_data)
             return None
 
-    def add_challenge(self, challenge_code: str, target_url: str, difficulty: str, points: int):
+    def add_challenge(self, challenge_code: str, target_url: str, difficulty: str,
+                      total_score: int, title: str = "", description: str = "",
+                      level: int = 0, flag_count: int = 1,
+                      flag_got_count: int = 0, total_got_score: int = 0,
+                      hint_viewed: bool = False, instance_status: str = "stopped",
+                      entrypoint: List[str] = None):
         """添加新挑战（初始状态为 open，原子操作）"""
         with self._lock:
             def updater(data):
@@ -202,15 +172,24 @@ class ChallengeStateManager:
 
                 new_challenge = ChallengeStateData(
                     challenge_code=challenge_code,
+                    title=title,
                     target_url=target_url,
                     difficulty=difficulty,
-                    points=points,
+                    level=level,
+                    total_score=total_score,
+                    total_got_score=total_got_score,
+                    flag_count=flag_count,
+                    flag_got_count=flag_got_count,
                     state="open",
                     fetched_at=now,
                     updated_at=now,
                     timeout_seconds=self.default_timeout,
                     containers=[],
-                    result=None
+                    result=None,
+                    hint_viewed=hint_viewed,
+                    description=description or None,
+                    instance_status=instance_status,
+                    entrypoint=entrypoint or [],
                 )
 
                 data["challenges"][challenge_code] = new_challenge.to_dict()
@@ -236,14 +215,12 @@ class ChallengeStateManager:
                 challenge_data["state"] = new_state
                 challenge_data["updated_at"] = now
 
-                # 更新额外字段
                 for key, value in kwargs.items():
                     if value is not None:
                         challenge_data[key] = value
 
                 data["last_updated"] = now
 
-            # 原子更新：在整个读-修改-写周期内持有文件锁
             self._atomic_update(updater)
 
     def get_challenges_by_state(self, state: str) -> List[ChallengeStateData]:
@@ -263,90 +240,103 @@ class ChallengeStateManager:
         """
         与平台同步挑战状态（原子操作，防止数据竞争）
 
+        新 API 字段映射:
+        - code → challenge_code
+        - entrypoint → target_url
+        - flag_got_count >= flag_count → solved
+
         Returns:
             Dict with keys:
                 - 'new': 新增的挑战代码列表
-                - 'removed': 移除的挑战代码列表（仅包含非最终状态的挑战）
+                - 'removed': 移除的挑战代码列表
                 - 'solved': 平台确认已解决的挑战代码列表
                 - 'recovered': 从 close 状态恢复的挑战代码列表
         """
         with self._lock:
-            # 先计算平台数据（不涉及文件操作）
-            platform_codes = {c.get("challenge_code") for c in platform_challenges}
-            platform_map = {c.get("challenge_code"): c for c in platform_challenges}
+            platform_codes = {c.get("code") for c in platform_challenges if c.get("code")}
+            platform_map = {c.get("code"): c for c in platform_challenges if c.get("code")}
 
             def updater(data):
-                """在持有文件锁的情况下执行同步"""
                 local_challenges = data.get("challenges", {})
                 local_codes = set(local_challenges.keys())
 
                 new_codes = platform_codes - local_codes
 
-                # 计算真正需要移除的挑战（排除已经是最终状态的）
+                # 计算需要移除的挑战
                 removed_codes = []
                 for code in local_codes - platform_codes:
                     local_state = local_challenges[code].get("state")
-                    # 只有 open/started 状态才计入 removed，close/success/fail 忽略
                     if local_state in ("open", "started"):
                         removed_codes.append(code)
 
                 # 检查已解决的挑战
                 solved_codes = []
                 for code, pc in platform_map.items():
-                    if code in local_codes and pc.get("solved", False):
-                        local_challenge = local_challenges[code]
-                        if local_challenge.get("state") not in ("success",):
-                            solved_codes.append(code)
+                    if code in local_codes:
+                        flag_got = pc.get("flag_got_count", 0)
+                        flag_total = pc.get("flag_count", 1)
+                        if flag_got >= flag_total:
+                            local_challenge = local_challenges[code]
+                            if local_challenge.get("state") not in ("success",):
+                                solved_codes.append(code)
 
                 now = datetime.now(timezone.utc).isoformat()
 
                 # 添加新挑战
                 for code in new_codes:
                     pc = platform_map[code]
-                    target_info = pc.get("target_info", {})
-                    ip, ports = target_info.get("ip", ""), target_info.get("port", [])
-                    target_url = f"http://{ip}:{ports[0]}" if ip and ports else ""
+                    entrypoint = pc.get("entrypoint") or []
+                    target_url = ""
+                    if entrypoint:
+                        addr = entrypoint[0]
+                        target_url = addr if addr.startswith("http") else f"http://{addr}"
 
-                    # 检查平台中该挑战是否已解决
-                    is_solved = pc.get("solved", False)
+                    flag_got = pc.get("flag_got_count", 0)
+                    flag_total = pc.get("flag_count", 1)
+                    is_solved = flag_got >= flag_total
                     initial_state = "success" if is_solved else "open"
                     initial_result = "solved_on_platform" if is_solved else None
 
                     new_challenge = ChallengeStateData(
                         challenge_code=code,
+                        title=pc.get("title", ""),
                         target_url=target_url,
                         difficulty=pc.get("difficulty", "unknown"),
-                        points=pc.get("points", 0),
+                        level=pc.get("level", 0),
+                        total_score=pc.get("total_score", 0),
+                        total_got_score=pc.get("total_got_score", 0),
+                        flag_count=flag_total,
+                        flag_got_count=flag_got,
                         state=initial_state,
                         fetched_at=now,
                         updated_at=now,
                         timeout_seconds=self.default_timeout,
                         containers=[],
-                        result=initial_result
+                        result=initial_result,
+                        hint_viewed=pc.get("hint_viewed", False),
+                        description=pc.get("description"),
+                        instance_status=pc.get("instance_status", "stopped"),
+                        entrypoint=entrypoint,
                     )
                     local_challenges[code] = new_challenge.to_dict()
 
-                    # 如果已解决，添加到 solved_codes
                     if is_solved:
                         solved_codes.append(code)
 
-                # 恢复 close 状态的挑战（如果平台还存在）
+                # 恢复 close 状态的挑战
                 recovered_codes = []
                 for code in platform_codes:
                     if code in local_challenges:
                         local_state = local_challenges[code].get("state")
-                        # 恢复 close 状态的挑战
                         if local_state == "close":
                             local_challenges[code]["state"] = "open"
                             local_challenges[code]["updated_at"] = now
                             local_challenges[code]["result"] = None
                             recovered_codes.append(code)
 
-                # 移除已删除的挑战（状态转为 close）
-                # 更加保守：只有当挑战不在平台且本地状态不是已完成的最终状态时才标记为 close
+                # 移除已删除的挑战
                 for code in removed_codes:
                     local_state = local_challenges[code].get("state")
-                    # 只有 open/started 状态才转为 close，success/fail 保持原样
                     if local_state in ("open", "started"):
                         local_challenges[code]["state"] = "close"
                         local_challenges[code]["updated_at"] = now
@@ -367,7 +357,6 @@ class ChallengeStateManager:
                     "recovered": recovered_codes
                 }
 
-            # 原子更新：在整个读-修改-写周期内持有文件锁
             return self._atomic_update(updater)
 
     def cleanup_old_challenges(self, max_age_hours: int = 24):
