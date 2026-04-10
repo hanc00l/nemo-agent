@@ -153,11 +153,20 @@ progress = {
 
 | 维度 | 检查项 | 完成标准 |
 |------|--------|----------|
-| **边界突破** | 初始入口 | 已获得目标 shell（WebShell/SSH/RDP） |
+| **边界突破** | 初始入口 | ⭐ 优先获取 Webshell（PHP/JSP/ASPX），其次反弹 Shell |
+| | RCE 利用 | 利用漏洞后立即上传 webshell，方便后续操作 |
+| | Shell 升级 | 如果只有反弹 shell，立即升级为交互式 shell |
 | **⭐ 信息收集（第一时间）** | 详见 [info-gathering 技能](../skills/pentest/internal/info-gathering/SKILL.md) | 获取 shell 后立即执行 |
-| | Linux 信息收集 | SSH私钥、历史命令、凭证文件、网络信息 |
-| | Windows 信息收集 | 凭证收集、RDP历史、配置文件、网络信息 |
+| | 横向移动信息收集 | SSH私钥、历史命令（密码/IP）、凭证文件、网络信息 |
+| | 当前用户信息 | whoami, id, sudo -l（判断提权可能性） |
+| | Linux 完整收集 | SSH私钥、历史命令、凭证文件、网络信息 |
+| | Windows 完整收集 | 凭证收集、RDP历史、配置文件、网络信息 |
 | | 自动化脚本 | `info_collect_linux.sh` / `info_collect_windows.bat` |
+| **⭐ 提权尝试（主动进行）** | 提权检查 | Agent 必须主动检查，不要等用户提示 |
+| | 检查清单 | sudo -l, SUID, 内核版本, Cron, PATH 劫持 |
+| | 提权策略 | 发现可能性就尝试 → 最多 10 分钟 → 失败就继续 |
+| | 提权工具 | LinPEAS/Linux Exploit Suggester 自动扫描 |
+| **FLAG 搜索** | 当前主机 | find / -name '*flag*', env, cat /root/flag.txt |
 | **第1跳：内网扫描** | 主机发现 | ⭐ 从入口主机上传 fscan 扫描内网网段 |
 | | 端口扫描 | 发现内网其他主机的开放端口 |
 | | 服务识别 | 识别内网关键服务（SSH/Web/DB/文件服务器） |
@@ -171,14 +180,17 @@ progress = {
 | | 数据库利用 | MySQL/Redis 未授权/弱口令 |
 | **第3跳+：深入渗透** | 从新主机继续扫描 | ⭐ 递归：从新控制的主机上传 fscan 继续扫描 |
 | | 新主机信息收集 | ⭐ 每控制一个新主机立即进行信息收集 |
+| | 新主机提权尝试 | ⭐ 每控制新主机都主动检查提权可能性 |
 | | 新网段发现 | 发现并扫描新网段（10.x/172.16-31.x） |
 | | 持续深入 | 重复渗透流程，像树状展开 |
-| **权限提升** | 内核漏洞 | LinPEAS/Linux Exploit Suggester |
-| | 弱权限 | SUID/Cron/Path 劫持 |
 | **凭证收集** | 密码哈希 | mimikatz/LaZagne |
 | | 配置文件 | 读取 .ssh/.history/config 等 |
 
 **⚠️ Zone3 渗透要点**：
+- **优先 Webshell**：RCE 利用后优先上传 webshell（PHP/JSP/ASPX），方便后续操作
+- **主动提权**：Agent 必须主动检查提权可能性（sudo -l, SUID, 内核漏洞），不要等用户提示
+- **提权策略**：发现可能性就尝试，最多 10 分钟，实在提权不了就继续渗透
+- **横向信息收集**：信息收集要包括横向移动相关的凭证（SSH私钥、历史命令中的密码、网络信息）
 - 内网中发现 **Web 服务**（80/443/8080）→ 使用 **Zone1 技能**进行渗透
 - 内网中发现 **特定版本服务** → 使用 **Zone2 技能**进行 CVE 利用
 - 通过代理或端口转发将内网服务映射到本地后测试
@@ -244,12 +256,23 @@ progress = {
 ### 第三赛区 - 内网渗透
 | 技能 | 用途 |
 |------|------|
-| [internal/](../skills/pentest/internal/SKILL.md) | 内网渗透 |
+| [internal/](../skills/pentest/internal/SKILL.md) | 内网渗透主文档 |
+| [zone3-workflow](../skills/pentest/internal/workflow/SKILL.md) | Zone 3 递归渗透工作流（层级概念、决策树） |
+| [post-exploitation](../skills/pentest/internal/post-exploitation/SKILL.md) | 后渗透标准操作（信息收集/凭证/提权） |
+| [multi-hop-proxy](../skills/pentest/internal/multi-hop-proxy/SKILL.md) | 多级代理（二层/三层隧道配置） |
 | [info-gathering](../skills/pentest/internal/info-gathering/SKILL.md) | ⭐ Shell 后信息收集（SSH私钥/历史/凭证） |
 | [tools-upload](../skills/pentest/internal/tools-upload/SKILL.md) | ⭐ 工具上传（fscan 等）- **仅 Zone3 使用** |
 | [domain-pentest](../skills/pentest/internal/references/domain-pentest.md) | 域渗透（Kerberos/委派/ADCS） |
 | [privilege-escalation](../skills/pentest/internal/references/privilege-escalation.md) | 提权技术（Windows/Linux） |
-| [tunneling](../skills/pentest/internal/tunneling.md) | 隧道建立 |
+
+#### 内网渗透工具
+| 技能 | 用途 |
+|------|------|
+| [stowaway](../skills/pentest/internal/tools/stowaway.md) | 多级节点代理（内网多跳首选） |
+| [netexec](../skills/pentest/internal/tools/netexec.md) | 横向移动（SMB/SSH/WinRM/RDP） |
+| [mimikatz](../skills/pentest/internal/tools/mimikatz.md) | Windows 凭证提取 |
+| [reverse-shell](../skills/pentest/internal/tools/reverse-shell.md) | 反弹 Shell payload 速查表 |
+| [file-transfer](../skills/pentest/internal/tools/file-transfer.md) | 文件传输技巧（上传/下载） |
 
 ### 核心技能
 | 技能 | 用途 |
