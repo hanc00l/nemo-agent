@@ -65,15 +65,29 @@ Playwright 自动化：页面访问、交互、截图、JS 执行
 
 ## 安全工具
 
+### apt 安装工具
+
 | 工具 | 用途 | 命令 |
 |------|------|------|
 | nmap | 端口扫描 | `nmap -sV -n -T4 --open target` |
-| ffuf | 模糊测试 | `ffuf -u 'http://target/FUZZ' -w wordlist` |
-| katana | 网页爬取 | `katana -u http://target -d 3 -jc` |
-| whatweb | 技术栈 | `whatweb -a 3 http://target` |
-| observer_ward | 技术栈 | `observer_ward -t  http://target` |
+| whatweb | 技术栈识别 | `whatweb -a 3 http://target` |
+| sqlmap | SQL 注入 | `sqlmap -u "http://target/page?id=1" --dbs` |
+| hydra | 暴力破解 | `hydra -l user -P pass.txt target ssh` |
+| hashcat | 密码破解 | `hashcat -m 0 hash.txt wordlist` |
+| proxychains4 | 代理链 | `proxychains4 nmap target` |
+| weevely | PHP Webshell | `weevely generate <pass> <path>` |
 
-**字典**: `/usr/share/seclists/Discovery/Web-Content/`
+### 其他安装工具
+
+| 工具 | 来源 | 用途 | 命令 |
+|------|------|------|------|
+| ffuf | /opt/workspace | 模糊测试 | `ffuf -u 'http://target/FUZZ' -w wordlist` |
+| katana | /opt/workspace | 网页爬取 | `katana -u http://target -d 3 -jc` |
+| observer_ward | /opt/workspace | 技术栈识别 | `observer_ward -t http://target` |
+| nuclei | /opt/workspace | 漏洞扫描 | `nuclei -u http://target` |
+| msfconsole | omnibus 安装 | 漏洞利用 | `msfconsole` |
+
+**字典**: `/opt/workspace/SecLists/Discovery/Web-Content/`
 
 ## 调度系统
 
@@ -123,6 +137,15 @@ Playwright 自动化：页面访问、交互、截图、JS 执行
 | 使用中文 | 记录和输出使用中文 |
 
 ## 运行方式
+
+### Ubuntu 独立环境安装
+
+```bash
+cd claude-code
+sudo ./install_ubuntu.sh
+```
+
+安装内容：基础工具、Chrome、渗透测试工具(apt)、Metasploit、Docker(阿里云镜像源)、Python 依赖、sudo 免密码。
 
 ### 调度器模式（推荐）
 

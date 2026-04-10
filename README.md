@@ -53,7 +53,7 @@
 │  │  │         MCP 服务: sandbox │ reverse (nc/jndi/msf)   │││
 │  │  └─────────────────────────────────────────────────────┘││
 │  │  ┌─────────────────────────────────────────────────────┐││
-│  │  │    安全工具: nmap │ ffuf │ katana │ whatweb          │││
+│  │  │    安全工具: nmap│sqlmap│hydra│hashcat│ffuf│katana│││
 │  │  └─────────────────────────────────────────────────────┘││
 │  └─────────────────────────────────────────────────────────┘│
 └─────────────────────────────────────────────────────────────┘
@@ -217,15 +217,29 @@ API:
 
 ### 安全工具
 
+#### apt 安装
+
 | 工具 | 用途 | 示例命令 |
 |------|------|----------|
 | nmap | 端口扫描 | `nmap -sV -n -T4 --open target` |
-| ffuf | 模糊测试 | `ffuf -u 'http://target/FUZZ' -w wordlist` |
-| katana | 网页爬取 | `katana -u http://target -d 3 -jc` |
 | whatweb | 技术栈识别 | `whatweb -a 3 http://target` |
-| observer_ward | 技术栈 | `observer_ward -t  http://target` |
+| sqlmap | SQL 注入 | `sqlmap -u "http://target/page?id=1" --dbs` |
+| hydra | 暴力破解 | `hydra -l user -P pass.txt target ssh` |
+| hashcat | 密码破解 | `hashcat -m 0 hash.txt wordlist` |
+| proxychains4 | 代理链 | `proxychains4 nmap target` |
+| weevely | PHP Webshell | `weevely generate <pass> <path>` |
 
-字典位置：`/usr/share/seclists/Discovery/Web-Content/`
+#### 其他安装
+
+| 工具 | 来源 | 用途 | 示例命令 |
+|------|------|------|----------|
+| ffuf | /opt/workspace | 模糊测试 | `ffuf -u 'http://target/FUZZ' -w wordlist` |
+| katana | /opt/workspace | 网页爬取 | `katana -u http://target -d 3 -jc` |
+| observer_ward | /opt/workspace | 技术栈识别 | `observer_ward -t http://target` |
+| nuclei | /opt/workspace | 漏洞扫描 | `nuclei -u http://target` |
+| msfconsole | omnibus 安装 | 漏洞利用 | `msfconsole` |
+
+字典位置：`/opt/workspace/SecLists/Discovery/Web-Content/`
 
 ## 项目结构
 
@@ -269,9 +283,23 @@ nemo-agent/
 | `NO_VISION` | 禁用 VNC | true |
 | `AGENT_TOKEN` | 平台认证令牌 | - |
 
-### 独立Ubuntu运行环境（可选，主要用于调试用）
+### 独立 Ubuntu 运行环境（可选，主要用于调试用）
 
-在前期调试和开发阶段，使用单一的ubuntu虚拟机更方便一些。可用claude-code/install_ubuntu.sh快速完成依赖组件和环境的安装。
+在前期调试和开发阶段，使用单一的 Ubuntu 虚拟机更方便一些。可用 `claude-code/install_ubuntu.sh` 快速完成依赖组件和环境的安装：
+
+```bash
+cd claude-code
+sudo ./install_ubuntu.sh
+```
+
+安装内容：
+- 基础工具：curl, wget, git, tmux, jq, openjdk-8-jdk, pipx 等
+- Chrome/Chromium 浏览器
+- 渗透测试工具（apt）：nmap, whatweb, sqlmap, hydra, hashcat, proxychains4, weevely
+- Metasploit Framework
+- Docker CE（阿里云镜像源 + Docker Hub 国内加速）+ Docker Compose
+- Python 依赖：fastmcp, playwright, libtmux, docker, django 等
+- sudo 免密码配置
 
 ### 靶场参考
 
