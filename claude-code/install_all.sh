@@ -219,17 +219,12 @@ else
     log_info "proxychains4 已存在"
 fi
 
-# --- weevely3 ---
+# --- weevely ---
 if ! command -v weevely &>/dev/null; then
-    apt-get install -y weevely 2>/dev/null || {
-        # weevely 可能不在标准仓库, 尝试 pip 安装
-        source "$VENV_DIR/bin/activate"
-        pip install -q weevely3 2>/dev/null || true
-        deactivate
-    }
-    log_info "weevely3 已安装"
+    apt-get install -y weevely
+    log_info "weevely 已安装"
 else
-    log_info "weevely3 已存在"
+    log_info "weevely 已存在"
 fi
 
 log_info "apt 渗透工具安装完成"

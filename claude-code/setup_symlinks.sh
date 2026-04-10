@@ -39,13 +39,6 @@ fi
 # NetExec (nxc)
 ln -sf "$WORKSPACE/NetExec/nxc"                    "$TARGET_DIR/nxc"
 
-# sqlmap (需要 python3 wrapper，因为 shebang 是 python 而非 python3)
-cat > "$TARGET_DIR/sqlmap" << 'EOF'
-#!/bin/bash
-exec python3 /opt/workspace/sqlmap-dev/sqlmap.py "$@"
-EOF
-chmod +x "$TARGET_DIR/sqlmap"
-
 # === 漏洞利用工具 ===
 
 # wsh (直接二进制)
@@ -97,7 +90,7 @@ echo ""
 echo "[+] Symlink 创建完成，验证结果："
 echo ""
 
-TOOLS="observer_ward katana ffuf fscan nuclei frpc frps stowaway_admin stowaway_agent chisel wsh nxc sqlmap JNDIExploit JYso shiro_cli neoreg"
+TOOLS="observer_ward katana ffuf fscan nuclei frpc frps stowaway_admin stowaway_agent chisel wsh nxc JNDIExploit JYso shiro_cli neoreg"
 
 for tool in $TOOLS; do
     if command -v "$tool" &>/dev/null; then
