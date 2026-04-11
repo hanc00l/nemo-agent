@@ -28,6 +28,9 @@ ln -sf "$WORKSPACE/fscan/fscan"                  "$TARGET_DIR/fscan"
 # nuclei 是直接二进制，不在子目录
 ln -sf "$WORKSPACE/nuclei"                       "$TARGET_DIR/nuclei"
 
+# xray (被动代理漏洞扫描)
+ln -sf "$WORKSPACE/xray/xray"                       "$TARGET_DIR/xray"
+
 # === 代理/隧道工具 ===
 
 # frp
@@ -99,7 +102,7 @@ echo ""
 echo "[+] Symlink 创建完成，验证结果："
 echo ""
 
-TOOLS="observer_ward katana ffuf fscan nuclei frpc frps stowaway_admin stowaway_agent chisel wsh nxc JNDIExploit JYso shiro_cli neoreg"
+TOOLS="observer_ward katana ffuf fscan nuclei xray frpc frps stowaway_admin stowaway_agent chisel wsh nxc JNDIExploit JYso shiro_cli neoreg"
 
 for tool in $TOOLS; do
     if command -v "$tool" &>/dev/null; then
