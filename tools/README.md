@@ -44,8 +44,8 @@
 mkdir -p /opt/workspace/fscan
 
 # Linux AMD64
-wget https://github.com/shadow1ng/fscan/releases/download/v1.8.4/fscan_amd64 -O /opt/workspace/fscan/fscan_amd64
-chmod +x /opt/workspace/fscan/fscan_amd64
+wget https://github.com/shadow1ng/fscan/releases/download/v1.8.4/fscan_amd64 -O /opt/workspace/fscan/fscan
+chmod +x /opt/workspace/fscan/fscan
 
 # Windows AMD64
 wget https://github.com/shadow1ng/fscan/releases/download/v1.8.4/fscan_windows_amd64.exe -O /opt/workspace/fscan/fscan_windows_amd64.exe
