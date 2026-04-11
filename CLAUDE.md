@@ -111,29 +111,20 @@ Playwright 自动化：页面访问、交互、截图、JS 执行
 
 **vulnerability-wiki**:
 - 位置: `~/.claude/skills/pentest/vulnerability-wiki/`
-- 功能: 基于 Awesome-POC 的漏洞知识库，支持应用名称和 CVE 搜索
+- 功能: 1123 个漏洞知识库，本地文件读取（无需容器/Web 服务）
 - 使用场景: observer_ward 识别出应用后，查询相关漏洞
 
 ```python
-from vuln_wiki_web import VulnerabilityWikiWebSearch
+# 查询函数定义见: skills/pentest/vulnerability-wiki/SKILL.md
 
-searcher = VulnerabilityWikiWebSearch(base_url="http://127.0.0.1:3001")
+# 按应用模糊搜索（返回所有匹配）
+results = search_by_app("ThinkPHP")  # 返回列表
 
-# 按应用搜索（指纹识别后）
-results = searcher.search_by_app("信呼OA", fuzzy=True)
+# 按 CVE 精确搜索
+result = search_by_cve("CVE-2022-22963")  # 返回单条
 
-# 按 CVE 搜索
-results = searcher.search_by_cve("CVE-2022-22963")
-
-# 获取详细内容
-detail = searcher.get_vulnerability_detail(results[0]['path'])
-```
-
-**启动服务**:
-```bash
-cd /path/to/Vulnerability-Wiki-master
-docker-compose -f docker-compose-simple.yml up -d
-# 访问 http://127.0.0.1:3001
+# 读取漏洞文件
+detail = read_vuln_file("framework/ThinkPHP5-5.0.23-远程代码执行漏洞.md")
 ```
 
 ## 调度系统
