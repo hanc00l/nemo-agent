@@ -63,6 +63,9 @@ RUN echo "clean..." && \
 # 6. 更新 Claude
 RUN command -v claude &> /dev/null && sudo claude update || true    
 
+# 临时增加安装工具
+RUN apt install -y mysql-client redis-tools --fix-missing
+
 # 设置工作目录
 WORKDIR /opt/nemo-agent
 
