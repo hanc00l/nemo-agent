@@ -534,7 +534,7 @@ class ChallengeScheduler:
             return
 
         # 5. 按 retry_num 从小到大排序（重试次数少的优先），同 retry_num 按难度排序
-        retryable.sort(key=lambda c: (c.retry_num, _difficulty_order(c.difficulty)))
+        retryable.sort(key=lambda c: (c.retry_num, -c.level, _difficulty_order(c.difficulty)))
 
         # 6. 只重置 available_slots 个题目
         to_retry = retryable[:available_slots]
@@ -568,7 +568,7 @@ class ChallengeScheduler:
         # 过滤黑名单题目
         if self._blacklist:
             open_challenges = [c for c in open_challenges if c.challenge_code not in self._blacklist]
-        open_challenges.sort(key=lambda c: (_difficulty_order(c.difficulty), c.fetched_at))
+        open_challenges.sort(key=lambda c: (-c.level, _difficulty_order(c.difficulty), c.fetched_at))
 
         for challenge in open_challenges:
             if running_count >= self.config.MAX_PARALLEL:
