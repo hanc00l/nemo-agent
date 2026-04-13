@@ -83,6 +83,7 @@ class ChallengeRepository:
                 'timeout_seconds': challenge_data.get('timeout_seconds'),
                 'containers': challenge_data.get('containers', []),
                 'result': challenge_data.get('result'),
+                'retry_num': challenge_data.get('retry_num', 0),
             })
 
         return challenges

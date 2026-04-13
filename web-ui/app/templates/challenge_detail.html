@@ -501,9 +501,9 @@
                         <span class="info-value">{{ challenge.target_url }}</span>
                     </div>
                     <div class="info-item">
-                        <span class="info-label">关卡</span>
+                        <span class="info-label">赛区</span>
                         <span class="info-value">
-                            <span class="badge" style="background-color: #e0e7ff; color: #4338ca;">Level {{ challenge.level|default:"0" }}</span>
+                            <span class="badge" style="background-color: #e0e7ff; color: #4338ca;">Zone {{ challenge.level|default:"0" }}</span>
                         </span>
                     </div>
                     <div class="info-item">
@@ -532,6 +532,16 @@
                         <span class="info-label">超时时间</span>
                         <span class="info-value">{{ challenge.timeout_seconds }}s</span>
                     </div>
+                    {% if challenge.retry_num %}
+                    <div class="info-item">
+                        <span class="info-label">重试次数</span>
+                        <span class="info-value">
+                            <span class="badge" style="background-color: {% if challenge.retry_num >= 3 %}#f8d7da{% else %}#fff3cd{% endif %}; color: {% if challenge.retry_num >= 3 %}#dc3545{% else %}#fd7e14{% endif %};">
+                                {{ challenge.retry_num }}次
+                            </span>
+                        </span>
+                    </div>
+                    {% endif %}
                     <div class="info-item">
                         <span class="info-label">获取时间</span>
                         <span class="info-value">{{ challenge.fetched_at|format_local_time }}</span>

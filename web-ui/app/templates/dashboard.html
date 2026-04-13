@@ -422,7 +422,7 @@
                             <div class="challenge-target">{{ challenge.target_url }}</div>
                         </div>
                         <div>
-                            <span class="badge badge-zone">Level {{ challenge.level|default:"0" }}</span>
+                            <span class="badge badge-zone">Zone {{ challenge.level|default:"0" }}</span>
                             <span class="badge badge-{{ challenge.difficulty }}">{{ challenge.difficulty|title }}</span>
                             <span class="badge" style="background-color: #58a6ff;">{{ challenge.points }}pts</span>
                             <span class="badge" style="background-color: #e0e7ff; color: #4338ca;">Flags {{ challenge.flag_got_count|default:"0" }}/{{ challenge.flag_count|default:"1" }}</span>
@@ -488,7 +488,7 @@
                             <div class="challenge-target">{{ challenge.target_url }}</div>
                         </div>
                         <div>
-                            <span class="badge badge-zone">Level {{ challenge.level|default:"0" }}</span>
+                            <span class="badge badge-zone">Zone {{ challenge.level|default:"0" }}</span>
                             <span class="badge badge-{{ challenge.difficulty }}">{{ challenge.difficulty|title }}</span>
                             <span class="badge" style="background-color: #3fb950;">{{ challenge.total_got_score|default:"0" }}/{{ challenge.total_score|default:"0" }}pts</span>
                             <span class="badge" style="background-color: #e0e7ff; color: #4338ca;">Flags {{ challenge.flag_got_count|default:"0" }}/{{ challenge.flag_count|default:"1" }}</span>
@@ -554,7 +554,7 @@
                             <div class="challenge-target">{{ challenge.target_url }}</div>
                         </div>
                         <div>
-                            <span class="badge badge-zone">Level {{ challenge.level|default:"0" }}</span>
+                            <span class="badge badge-zone">Zone {{ challenge.level|default:"0" }}</span>
                             <span class="badge badge-{{ challenge.difficulty }}">{{ challenge.difficulty|title }}</span>
                             <span class="badge" style="background-color: #f85149;">{{ challenge.total_got_score|default:"0" }}/{{ challenge.total_score|default:"0" }}pts</span>
                             <span class="badge" style="background-color: #e0e7ff; color: #4338ca;">Flags {{ challenge.flag_got_count|default:"0" }}/{{ challenge.flag_count|default:"1" }}</span>
@@ -575,6 +575,12 @@
                         <span class="duration-separator"> | </span>
                         <span class="duration-badge" data-started-at="{{ challenge.started_at }}" data-updated-at="{{ challenge.updated_at }}">
                             <i class="bi bi-stopwatch"></i> 运行时长: <span class="duration-text">计算中...</span>
+                        </span>
+                        {% endif %}
+                        {% if challenge.retry_num %}
+                        <span class="duration-separator"> | </span>
+                        <span class="time-badge">
+                            <i class="bi bi-arrow-repeat"></i> 重试: {{ challenge.retry_num }}次
                         </span>
                         {% endif %}
                     </div>
@@ -987,7 +993,7 @@
                             <div class="challenge-target">${safeTarget}</div>
                         </div>
                         <div>
-                            <span class="badge badge-zone">Level ${zone}</span>
+                            <span class="badge badge-zone">Zone ${zone}</span>
                             <span class="badge badge-${challenge.difficulty}">${safeDiff}</span>
                             <span class="badge" style="background-color: ${state === 'success' ? '#3fb950' : state === 'fail' ? '#f85149' : '#58a6ff'};">${scoreText}</span>
                             <span class="badge" style="background-color: #e0e7ff; color: #4338ca;">Flags ${flagGot}/${flagCount}</span>
@@ -1011,6 +1017,7 @@
                     ${state === 'fail' ? `
                     <div class="challenge-meta">
                         ${failHtml}
+                        ${challenge.retry_num > 0 ? `<span class="duration-separator"> | </span><span class="time-badge"><i class="bi bi-arrow-repeat"></i> 重试: ${challenge.retry_num}次</span>` : ''}
                     </div>
                     ` : ''}
                     <!-- 快捷跳转按钮 -->

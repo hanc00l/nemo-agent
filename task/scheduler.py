@@ -33,7 +33,15 @@ from core import (
     PlatformClient,
     # 信号
     GracefulShutdown,
+    # 提示词构建
+    build_task_prompt,
 )
+
+
+def _difficulty_order(difficulty: str) -> int:
+    """难度排序权重：easy=0, medium=1, hard=2"""
+    order = {"easy": 0, "medium": 1, "hard": 2}
+    return order.get(difficulty, 3)
 
 
 class ChallengeScheduler:
@@ -186,6 +194,9 @@ class ChallengeScheduler:
 
                 # 7. 启动新挑战
                 self._start_new_challenges()
+
+                # 8. 检查并重试失败的任务
+                self._check_and_retry_failed()
 
             except Exception as e:
                 self.logger.error(f"主循环出错: {e}", "error")
@@ -424,7 +435,7 @@ class ChallengeScheduler:
                         llm_configs=self.config.llm_configs,
                         description=challenge.description or "",
                         hint=challenge.hint_content or "",
-                        zone=self._current_level,
+                        zone=challenge.level,
                         flag_count=challenge.flag_count or 1,
                     )
                     self.logger.info(f"重新创建容器成功: {container_names}", "container")
@@ -453,6 +464,69 @@ class ChallengeScheduler:
                     self.logger.info(f"清理 {state} 状态的容器: {challenge_code}", "container")
                     self._stop_challenge_full(challenge_code)
 
+    def _check_and_retry_failed(self):
+        """检查是否需要重试失败的任务"""
+        # 1. 检查前提：无 open 状态的题目（新题目优先处理）
+        open_challenges = self.state_manager.get_challenges_by_state(STATE_OPEN)
+        if open_challenges:
+            return
+
+        # 2. 计算可用的重试槽位 = MAX_PARALLEL - 当前 started 数量
+        started_challenges = self.state_manager.get_challenges_by_state(STATE_STARTED)
+        available_slots = self.config.MAX_PARALLEL - len(started_challenges)
+
+        if available_slots <= 0:
+            return
+
+        # 3. 获取所有失败的题目
+        failed_challenges = self.state_manager.get_challenges_by_state(STATE_FAIL)
+        if not failed_challenges:
+            return
+
+        # 4. 过滤可重试的（retry_num < TASK_RETRY_MAX）
+        retryable = [c for c in failed_challenges if c.retry_num < self.config.TASK_RETRY_MAX]
+
+        if not retryable:
+            # 仅记录刚达到上限的题目（retry_num == TASK_RETRY_MAX），避免每周期重复
+            newly_exhausted = [c for c in failed_challenges
+                               if c.retry_num == self.config.TASK_RETRY_MAX]
+            for c in newly_exhausted:
+                self.logger.info(
+                    f"挑战 {c.challenge_code} 已达最大重试次数 "
+                    f"({c.retry_num}/{self.config.TASK_RETRY_MAX})，放弃",
+                    "retry"
+                )
+                # 标记为已记录，后续周期不再输出
+                self.state_manager.update_state(
+                    c.challenge_code,
+                    STATE_FAIL,
+                    retry_num=self.config.TASK_RETRY_MAX + 1,
+                )
+            return
+
+        # 5. 按 retry_num 从小到大排序（重试次数少的优先），同 retry_num 按难度排序
+        retryable.sort(key=lambda c: (c.retry_num, _difficulty_order(c.difficulty)))
+
+        # 6. 只重置 available_slots 个题目
+        to_retry = retryable[:available_slots]
+
+        # 7. 重置状态为 open，retry_num + 1
+        for challenge in to_retry:
+            new_retry = challenge.retry_num + 1
+            self.state_manager.update_state(
+                challenge.challenge_code,
+                STATE_OPEN,
+                retry_num=new_retry,
+                result=None,
+                started_at=None,
+                containers=[],
+            )
+            self.logger.info(
+                f"重试题目 {challenge.challenge_code} (第 {new_retry}/{self.config.TASK_RETRY_MAX} 次, "
+                f"难度: {challenge.difficulty})",
+                "retry"
+            )
+
     def _start_new_challenges(self):
         """启动新挑战（双层：先启动平台实例，再启动本地容器）"""
         started = self.state_manager.get_challenges_by_state(STATE_STARTED)
@@ -462,7 +536,7 @@ class ChallengeScheduler:
             return
 
         open_challenges = self.state_manager.get_challenges_by_state(STATE_OPEN)
-        open_challenges.sort(key=lambda c: c.fetched_at)
+        open_challenges.sort(key=lambda c: (_difficulty_order(c.difficulty), c.fetched_at))
 
         for challenge in open_challenges:
             if running_count >= self.config.MAX_PARALLEL:
@@ -513,18 +587,40 @@ class ChallengeScheduler:
             except Exception as e:
                 self.logger.warn(f"获取提示失败（不影响解题）: {e}", "start")
 
-            # 3. 启动本地 Docker 容器（解题 Agent，含描述和提示）
+            # 3. 输出题目信息和提示词
+            challenge_info = (
+                f"========== 启动解题 ==========\n"
+                f"题目: {challenge.title} ({challenge_code})\n"
+                f"难度: {challenge.difficulty} | 赛区: Zone {challenge.level} | "
+                f"Flag数: {challenge.flag_count or 1}\n"
+                f"目标: {target_url}\n"
+                f"描述: {challenge.description or '无'}\n"
+                f"提示: {hint_content or '无'}"
+            )
+            self.logger.info(challenge_info, "start")
+
+            task_prompt = build_task_prompt(
+                target_url, challenge_code,
+                competition_mode=True,
+                description=challenge.description or "",
+                hint=hint_content,
+                zone=challenge.level,
+                flag_count=challenge.flag_count or 1,
+            )
+            self.logger.info(f"提示词:\n{task_prompt}", "start")
+
+            # 4. 启动本地 Docker 容器（解题 Agent，含描述和提示）
             container_names = self.container_manager.start_challenge_containers(
                 challenge_code=challenge_code,
                 target_url=target_url,
                 llm_configs=self.config.llm_configs,
                 description=challenge.description or "",
                 hint=hint_content,
-                zone=self._current_level,
+                zone=challenge.level,
                 flag_count=challenge.flag_count or 1,
             )
 
-            # 4. 更新状态
+            # 5. 更新状态
             now = get_timestamp()
             self.state_manager.update_state(
                 challenge_code,
@@ -553,7 +649,7 @@ class ChallengeScheduler:
                 pass
             self.state_manager.update_state(
                 challenge_code,
-                STATE_OPEN,
+                STATE_FAIL,
                 result=f"start_failed: {e}",
                 containers=[]
             )
