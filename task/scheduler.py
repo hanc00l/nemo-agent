@@ -494,6 +494,9 @@ class ChallengeScheduler:
         """检查是否需要重试失败的任务"""
         # 1. 检查前提：无 open 状态的题目（新题目优先处理）
         open_challenges = self.state_manager.get_challenges_by_state(STATE_OPEN)
+        # 过滤黑名单题目（黑名单 OPEN 不会启动，不应阻塞重试）
+        if self._blacklist:
+            open_challenges = [c for c in open_challenges if c.challenge_code not in self._blacklist]
         if open_challenges:
             return
 
@@ -533,7 +536,7 @@ class ChallengeScheduler:
                 )
             return
 
-        # 5. 按 retry_num 从小到大排序（重试次数少的优先），同 retry_num 按难度排序
+        # 5. 按 retry_num 升序，同 retry_num 按 level 降序 → 难度升序
         retryable.sort(key=lambda c: (c.retry_num, -c.level, _difficulty_order(c.difficulty)))
 
         # 6. 只重置 available_slots 个题目
