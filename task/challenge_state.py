@@ -38,6 +38,7 @@ class ChallengeStateData:
     description: Optional[str] = None
     instance_status: str = "stopped"
     entrypoint: List[str] = field(default_factory=list)
+    retry_num: int = 0
 
     @property
     def is_solved(self) -> bool:
@@ -49,7 +50,8 @@ class ChallengeStateData:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ChallengeStateData":
-        """从字典创建"""
+        """从字典创建（兼容旧数据无 retry_num 字段，不修改原始 dict）"""
+        data = {**data, "retry_num": data.get("retry_num", 0)}
         return cls(**data)
 
 
@@ -243,13 +245,20 @@ class ChallengeStateManager:
 
             self._atomic_update(updater)
 
+    # 哨兵值：区分"未提供参数"和"显式设置为 None"
+    _UNSET = object()
+
     def update_state(
         self,
         challenge_code: str,
         new_state: str,
         **kwargs
     ):
-        """更新挑战状态（原子操作，防止数据竞争）"""
+        """更新挑战状态（原子操作，防止数据竞争）
+
+        支持将字段显式设置为 None（用于重试时清除旧值）。
+        未提供的参数不会被修改。
+        """
         with self._lock:
             def updater(data):
                 challenges = data.get("challenges", {})
@@ -262,7 +271,7 @@ class ChallengeStateManager:
                 challenge_data["updated_at"] = now
 
                 for key, value in kwargs.items():
-                    if value is not None:
+                    if value is not ChallengeStateManager._UNSET:
                         challenge_data[key] = value
 
                 data["last_updated"] = now

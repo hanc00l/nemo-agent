@@ -29,6 +29,9 @@ class SchedulerConfig:
     MAX_LLM: int = 3                  # Number of LLM agents per challenge
     VNC_BASE_PORT: int = 55900        # VNC port = VNC_BASE_PORT + llm_id
 
+    # Retry settings
+    TASK_RETRY_MAX: int = 3           # Max retry count per failed challenge
+
     # Storage paths (相对路径，基于 task 目录)
     STATE_FILE: str = "data/subjects.json"
     LOG_FILE: str = "data/scheduler.log"
@@ -66,6 +69,9 @@ class SchedulerConfig:
         state_file = os.getenv("STATE_FILE", "data/subjects.json")
         log_file = os.getenv("LOG_FILE", "data/scheduler.log")
 
+        # Retry settings
+        task_retry_max = int(os.getenv("TASK_RETRY_MAX", "3"))
+
         # Load LLM configs (使用 core 模块)
         llm_config_objs = load_llm_configs(max_llm)
         llm_configs = to_dict_list(llm_config_objs)
@@ -81,6 +87,7 @@ class SchedulerConfig:
             VNC_BASE_PORT=vnc_base_port,
             STATE_FILE=state_file,
             LOG_FILE=log_file,
+            TASK_RETRY_MAX=task_retry_max,
             llm_configs=llm_configs
         )
 
