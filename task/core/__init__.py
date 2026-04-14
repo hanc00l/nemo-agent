@@ -10,6 +10,9 @@ from .container import (
     get_container_name,
     build_task_prompt,
     get_notes_dir,
+    get_reverse_ports,
+    release_reverse_ports,
+    init_port_registry,
 )
 from .runner import (
     TaskResult,
@@ -54,6 +57,9 @@ __all__ = [
     "get_container_name",
     "build_task_prompt",
     "get_notes_dir",
+    "get_reverse_ports",
+    "release_reverse_ports",
+    "init_port_registry",
     # Runner
     "TaskResult",
     "get_log_prefix",

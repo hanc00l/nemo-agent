@@ -28,6 +28,7 @@ class SchedulerConfig:
     DOCKER_IMAGE: str = "nemo-agent/sandbox:1.0"
     MAX_LLM: int = 3                  # Number of LLM agents per challenge
     VNC_BASE_PORT: int = 55900        # VNC port = VNC_BASE_PORT + llm_id
+    NETWORK_MODE: str = "bridge"      # Docker 网络模式
 
     # Retry settings
     TASK_RETRY_MAX: int = 3           # Max retry count per failed challenge
@@ -76,6 +77,9 @@ class SchedulerConfig:
         llm_config_objs = load_llm_configs(max_llm)
         llm_configs = to_dict_list(llm_config_objs)
 
+        # Network settings
+        network_mode = os.getenv("NETWORK_MODE", "bridge")
+
         return cls(
             FETCH_INTERVAL=fetch_interval,
             MAX_PARALLEL=max_parallel,
@@ -85,6 +89,7 @@ class SchedulerConfig:
             DOCKER_IMAGE=docker_image,
             MAX_LLM=max_llm,
             VNC_BASE_PORT=vnc_base_port,
+            NETWORK_MODE=network_mode,
             STATE_FILE=state_file,
             LOG_FILE=log_file,
             TASK_RETRY_MAX=task_retry_max,

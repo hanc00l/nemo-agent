@@ -325,6 +325,7 @@ Jupyter 会话自动加载 `toolset` 包，提供 `toolset.browser`、`toolset.t
 | HTTP exploit 用 Python | 禁止 terminal + curl（bash 二次解析特殊字符） |
 | 同类型攻击最多 3 次 | 失败后切换攻击类型 |
 | 知识库优先 | 识别到应用后必须先查 vulnerability-wiki，禁止未查就 WebSearch |
+| 端口自由使用 | 容器映射的 10 个端口（PORT_NC ~ PORT_STOWAWAY）均为已映射到宿主机的可用端口，可按需自由分配给任何监听服务，用途仅作参考 |
 | 授权使用 | 仅用于授权测试和 CTF 竞赛 |
 | 使用中文 | 记录和输出使用中文 |
 

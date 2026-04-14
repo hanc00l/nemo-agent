@@ -31,6 +31,8 @@ from core import (
     cleanup_container,
     # 并行执行
     ParallelExecutor,
+    # 端口注册
+    init_port_registry,
 )
 
 # 加载 .env 文件
@@ -146,6 +148,7 @@ class CTFSolveRunner:
             docker_image=self.image,
             vnc_base_port=vnc_base_port,
             competition_mode=competition_mode,
+            network_mode=os.getenv("NETWORK_MODE", "bridge"),
         )
         print(f"{self.log_prefix} [+] 容器已启动: {self.container.name}")
 
@@ -153,8 +156,9 @@ class CTFSolveRunner:
         verify_container_running(self.container, self.log_prefix)
 
     def cleanup(self):
-        """清理容器资源"""
-        cleanup_container(self.container, self.log_prefix)
+        """清理容器资源（含端口注册释放）"""
+        cleanup_container(self.container, self.log_prefix,
+                          challenge_code=self.challenge_code, llm_id=self.llm_id)
 
     def __del__(self):
         """析构函数，安全清理资源"""
@@ -236,7 +240,12 @@ if __name__ == "__main__":
     )
 
     try:
-        # 4. 创建所有 Runner
+        # 4. 初始化端口注册表（扫描已有容器，必须在创建 Runner 之前调用一次）
+        _docker_client = create_docker_client()
+        init_port_registry(_docker_client)
+        _docker_client.close()
+
+        # 5. 创建所有 Runner
         executor.runners = executor.create_runners()
         if not executor.runners:
             print("[-] 错误: 没有成功创建任何 Runner")
@@ -244,18 +253,18 @@ if __name__ == "__main__":
 
         print(f"[+] 成功创建 {len(executor.runners)} 个 Runner")
 
-        # 5. 构建任务
+        # 6. 构建任务
         task = build_task_prompt(args.target, args.challenge_code, args.competition,
                                 description=args.description, hint=args.hint, zone=args.zone)
 
-        # 6. 并行执行任务
+        # 7. 并行执行任务
         result = executor.execute_tasks(
             task=task,
             execute_method="run_task",
             get_log_prefix=lambda r: r.log_prefix
         )
 
-        # 7. 处理结果
+        # 8. 处理结果
         if result.success:
             print("[+] ====================")
             print("[+] 解题成功!")
@@ -288,6 +297,6 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"[-] 执行出错: {e}")
     finally:
-        # 8. 清理所有资源
+        # 9. 清理所有资源
         executor.cleanup_all()
         print("[+] 资源已清理")

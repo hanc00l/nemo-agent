@@ -62,7 +62,8 @@ class ChallengeScheduler:
         )
         self.container_manager = ContainerManager(
             docker_image=config.DOCKER_IMAGE,
-            vnc_base_port=config.VNC_BASE_PORT
+            vnc_base_port=config.VNC_BASE_PORT,
+            network_mode=config.NETWORK_MODE,
         )
 
         # 平台客户端

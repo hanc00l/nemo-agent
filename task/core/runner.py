@@ -291,14 +291,18 @@ def execute_task_with_stop_check(
 
 def cleanup_container(
     container: Container,
-    log_prefix: str = ""
+    log_prefix: str = "",
+    challenge_code: str = "",
+    llm_id: int = 0,
 ) -> None:
     """
-    清理容器资源
+    清理容器资源（含端口注册释放）
 
     Args:
         container: 容器对象
         log_prefix: 日志前缀
+        challenge_code: 题目代码（用于释放端口注册）
+        llm_id: LLM ID（用于释放端口注册）
     """
     if container:
         try:
@@ -308,6 +312,14 @@ def cleanup_container(
         except Exception as e:
             if log_prefix:
                 print(f"{log_prefix} [-] 清理容器时出错: {e}")
+
+    # 释放端口注册
+    if challenge_code and llm_id:
+        try:
+            from .container import release_reverse_ports
+            release_reverse_ports(challenge_code, llm_id)
+        except Exception:
+            pass
 
 
 def get_container_logs(container: Container) -> str:

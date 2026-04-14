@@ -20,6 +20,8 @@ from core import (
     create_challenge_container,
     build_task_prompt,
     get_notes_dir,
+    release_reverse_ports,
+    init_port_registry,
     TaskResult,
 )
 
@@ -35,9 +37,10 @@ class ContainerResult:
 class ContainerManager:
     """Docker 容器生命周期管理"""
 
-    def __init__(self, docker_image: str, vnc_base_port: int = 55900):
+    def __init__(self, docker_image: str, vnc_base_port: int = 55900, network_mode: str = "bridge"):
         self.docker_image = docker_image
         self.vnc_base_port = vnc_base_port
+        self.network_mode = network_mode
 
         try:
             self.client = docker.DockerClient()
@@ -45,6 +48,9 @@ class ContainerManager:
             self.client.ping()
         except DockerException as e:
             raise RuntimeError(f"无法连接到 Docker daemon: {e}")
+
+        # 扫描运行中容器，重建端口注册表
+        init_port_registry(self.client)
 
         # 验证镜像存在
         self._ensure_image()
@@ -121,18 +127,20 @@ class ContainerManager:
                     docker_image=self.docker_image,
                     vnc_base_port=self.vnc_base_port,
                     competition_mode=True,  # 启用竞赛模式
+                    network_mode=self.network_mode,
                 )
 
-                # 获取容器配置中的 VNC 端口信息
-                from core.container import prepare_container_config
-                container_config = prepare_container_config(
-                    llm_id=llm_id,
-                    llm_config=config,
-                    challenge_code=challenge_code,
-                    vnc_base_port=self.vnc_base_port,
-                    competition_mode=True
-                )
-                actual_vnc_port = container_config.get("vnc_port")
+                # 从容器端口绑定中提取 VNC 端口（避免重复调用 prepare_container_config）
+                actual_vnc_port = None
+                container.reload()
+                port_bindings = container.attrs.get('NetworkSettings', {}).get('Ports', {})
+                for port_spec in (port_bindings or {}):
+                    if port_spec.startswith('55'):  # VNC 端口范围 55900+
+                        try:
+                            actual_vnc_port = int(port_spec.split('/')[0])
+                            break
+                        except (ValueError, IndexError):
+                            pass
 
                 # 根据是否启用 VNC 显示不同信息
                 if actual_vnc_port:
@@ -284,6 +292,14 @@ class ContainerManager:
         for container in containers:
             if container.name and container.name.startswith(prefix):
                 try:
+                    # 提取 llm_id 并释放端口
+                    parts = container.name.split("-LLM-")
+                    if len(parts) == 2:
+                        try:
+                            llm_id = int(parts[1])
+                            release_reverse_ports(challenge_code, llm_id)
+                        except ValueError:
+                            pass
                     container.remove(force=True)
                     print(f"[+] 容器已停止: {container.name}")
                     stopped_count += 1
@@ -357,7 +373,7 @@ class ContainerManager:
 
     def cleanup_stopped_containers(self) -> int:
         """
-        清理所有已停止的调度器容器
+        清理所有已停止的调度器容器（含端口注册释放）
 
         Returns:
             清理的容器数量
@@ -369,6 +385,14 @@ class ContainerManager:
             name = container.name
             if name and "-LLM-" in name and container.status != "running":
                 try:
+                    # 提取 challenge_code 和 llm_id，释放端口注册
+                    parts = name.split("-LLM-")
+                    if len(parts) == 2:
+                        try:
+                            llm_id = int(parts[1])
+                            release_reverse_ports(parts[0], llm_id)
+                        except ValueError:
+                            pass
                     container.remove(force=True)
                     print(f"[+] 清理已停止的容器: {name}")
                     cleaned += 1

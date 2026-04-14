@@ -4,6 +4,7 @@ Container - 容器创建和管理
 提供创建 CTF 解题容器的公共功能。
 """
 import os
+import threading
 import docker
 from docker.models.containers import Container
 from docker.errors import ImageNotFound, APIError
@@ -13,6 +14,17 @@ from typing import Dict, Optional, Tuple
 # 默认配置
 DEFAULT_DOCKER_IMAGE = "nemo-agent/sandbox:1.0"
 DEFAULT_VNC_BASE_PORT = 55900
+DEFAULT_NETWORK_MODE = "bridge"
+
+# 反弹端口配置
+REVERSE_PORT_BASE = 20000    # 端口分配起始
+PORT_SLOT_SIZE = 10          # 每个容器预留端口数
+MAX_PORT_SLOTS = 100         # 最大容器数（100 × 10 = 端口范围 20000-20999）
+
+# 运行时端口注册表：key="challenge_code:llm_id" -> base_port
+_port_registry: Dict[str, int] = {}
+_next_slot = 0
+_registry_lock = threading.Lock()
 
 
 def get_notes_dir() -> str:
@@ -39,6 +51,129 @@ def get_workspace_dir() -> str:
 DEFAULT_VOLUMES = {
     "../claude-code": {"bind": "/opt/nemo-agent/claude-code", "mode": "ro"},
 }
+
+
+def _registry_key(challenge_code: str, llm_id: int) -> str:
+    """生成端口注册表 key"""
+    return f"{challenge_code}:{llm_id}"
+
+
+def init_port_registry(docker_client: docker.DockerClient) -> None:
+    """
+    扫描运行中的容器，重建端口注册表（调度器启动时调用）
+
+    Args:
+        docker_client: Docker 客户端
+    """
+    global _next_slot
+    with _registry_lock:
+        _port_registry.clear()
+        _next_slot = 0
+        try:
+            for container in docker_client.containers.list():
+                name = container.name
+                if not name or "-LLM-" not in name:
+                    continue
+                parts = name.split("-LLM-")
+                if len(parts) != 2:
+                    continue
+                challenge_code, llm_id_str = parts
+                try:
+                    llm_id = int(llm_id_str)
+                except ValueError:
+                    continue
+
+                # 从容器端口绑定中找到 20000+ 范围的最高端口
+                port_bindings = container.attrs.get('NetworkSettings', {}).get('Ports', {})
+                max_slot = 0
+                for port_spec in (port_bindings or {}):
+                    try:
+                        port = int(port_spec.split('/')[0])
+                    except (ValueError, IndexError):
+                        continue
+                    if port >= REVERSE_PORT_BASE:
+                        slot = (port - REVERSE_PORT_BASE) // PORT_SLOT_SIZE
+                        max_slot = max(max_slot, slot)
+
+                if max_slot > 0:
+                    key = _registry_key(challenge_code, llm_id)
+                    base = REVERSE_PORT_BASE + max_slot * PORT_SLOT_SIZE
+                    _port_registry[key] = base
+                    _next_slot = max(_next_slot, max_slot + 1)
+        except Exception:
+            pass
+
+
+def get_reverse_ports(llm_id: int, challenge_code: str = "") -> Dict[str, int]:
+    """
+    为容器分配反弹端口（运行时注册，保证多题目 × 多 LLM 无冲突）
+
+    每个 (challenge_code, llm_id) 组合分配独立的 10 端口槽。
+    同一组合重复调用返回相同端口（幂等）。
+
+    Args:
+        llm_id: LLM ID
+        challenge_code: 题目代码
+
+    Returns:
+        端口名称到端口号的映射
+    """
+    global _next_slot
+
+    with _registry_lock:
+        key = _registry_key(challenge_code, llm_id)
+
+        if key in _port_registry:
+            base = _port_registry[key]
+        else:
+            if _next_slot >= MAX_PORT_SLOTS:
+                raise RuntimeError(
+                    f"端口槽已耗尽（最多 {MAX_PORT_SLOTS} 个容器），"
+                    f"请检查是否有僵尸容器未清理"
+                )
+            base = REVERSE_PORT_BASE + _next_slot * PORT_SLOT_SIZE
+            _port_registry[key] = base
+            _next_slot += 1
+
+    ports = {
+        "nc": base,                 # NC 反弹 shell（主）
+        "nc2": base + 1,            # NC 反弹 shell（备）
+        "jndi_ldap": base + 2,      # JNDI LDAP
+        "jndi_http": base + 3,      # JNDI HTTP
+        "socks5": base + 4,         # SOCKS5 代理
+        "frp": base + 5,            # frp 服务端
+        "frp_dashboard": base + 6,  # frp Dashboard
+        "msf": base + 7,            # Metasploit
+        "chisel": base + 8,         # chisel 服务端
+        "stowaway": base + 9,       # Stowaway 管理端
+    }
+    return ports
+
+
+def _compact_next_slot() -> None:
+    """回缩 _next_slot 到 registry 中实际最大 slot + 1（需在 _registry_lock 内调用）"""
+    global _next_slot
+    if not _port_registry:
+        _next_slot = 0
+        return
+    max_slot = 0
+    for base in _port_registry.values():
+        slot = (base - REVERSE_PORT_BASE) // PORT_SLOT_SIZE
+        max_slot = max(max_slot, slot)
+    _next_slot = max_slot + 1
+
+
+def release_reverse_ports(challenge_code: str, llm_id: int) -> None:
+    """
+    释放端口注册并回收 slot（容器停止时调用）
+
+    Args:
+        challenge_code: 题目代码
+        llm_id: LLM ID
+    """
+    with _registry_lock:
+        _port_registry.pop(_registry_key(challenge_code, llm_id), None)
+        _compact_next_slot()
 
 
 def get_volumes() -> Dict[str, Dict]:
@@ -212,7 +347,7 @@ def prepare_container_config(
         config = {
             "name": container_name,
             "environment": environment,
-            "ports": {},  # 不映射任何端口
+            "ports": {},  # 不映射 VNC 端口
             "vnc_port": None,
             "llm_id": llm_id,
         }
@@ -228,6 +363,17 @@ def prepare_container_config(
             "llm_id": llm_id,
         }
 
+    # 注入反弹 IP 和端口配置
+    reverse_ip = os.getenv("REVERSE_IP", "")
+    if reverse_ip:
+        environment["REVERSE_IP"] = reverse_ip
+
+    reverse_ports = get_reverse_ports(llm_id, challenge_code)
+    for name, port in reverse_ports.items():
+        env_key = f"PORT_{name.upper()}"
+        environment[env_key] = str(port)
+        config["ports"][f"{port}/tcp"] = port
+
     return config
 
 
@@ -240,7 +386,7 @@ def create_challenge_container(
     vnc_base_port: int = DEFAULT_VNC_BASE_PORT,
     volumes: Optional[Dict] = None,
     competition_mode: bool = False,
-    network_mode: str="host"
+    network_mode: str = DEFAULT_NETWORK_MODE,
 ) -> Container:
     """
     创建并启动 CTF 解题容器
@@ -254,6 +400,7 @@ def create_challenge_container(
         vnc_base_port: VNC 基础端口
         volumes: 卷挂载配置，默认使用 get_volumes()（自动展开 ~ 路径）
         competition_mode: 是否为竞赛模式
+        network_mode: 网络模式，默认 bridge
 
     Returns:
         创建的容器对象
@@ -291,10 +438,11 @@ def create_challenge_container(
             volumes=volumes,
             environment=config["environment"],
             ports=config["ports"],
-            entrypoint=["/bin/bash", "/opt/nemo-agent/claude-code/entrypoint.sh"],  # 容器内绝对路径
+            entrypoint=["/bin/bash", "/opt/nemo-agent/claude-code/entrypoint.sh"],
             detach=True,
             remove=False,
-            network_mode=network_mode
+            network_mode=network_mode,
+            extra_hosts={"host.docker.internal": "host-gateway"},
         )
         return container
     except Exception as e:
