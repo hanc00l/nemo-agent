@@ -240,6 +240,7 @@ def create_challenge_container(
     vnc_base_port: int = DEFAULT_VNC_BASE_PORT,
     volumes: Optional[Dict] = None,
     competition_mode: bool = False,
+    network_mode: str="host"
 ) -> Container:
     """
     创建并启动 CTF 解题容器
@@ -292,7 +293,8 @@ def create_challenge_container(
             ports=config["ports"],
             entrypoint=["/bin/bash", "/opt/nemo-agent/claude-code/entrypoint.sh"],  # 容器内绝对路径
             detach=True,
-            remove=False
+            remove=False,
+            network_mode=network_mode
         )
         return container
     except Exception as e:
