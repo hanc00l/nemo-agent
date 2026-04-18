@@ -4,7 +4,7 @@
 
 基于 Claude Code 的自动化渗透测试 Agent，达到中高级网络安全专家水平。
 
-> 题目调度和部份提示词(如：Zone/1-4)是针对第二届腾讯云黑客松智能渗透挑战赛规则定制的；工具固定安装于/opt/workspace目录，未包含在项目中，如若使用请根据skill自动下载。
+> 题目调度和部份提示词(如：Zone/1-4)是针对第二届腾讯云黑客松智能渗透挑战赛规则定制的；工具固定安装于/opt/workspace目录，未包含在项目中，如若使用请根据skill自行下载。
 
 ## 特性
 
@@ -527,3 +527,4 @@ sudo ./install_all.sh
 - [wooyun-legacy、xianzhi-research](https://github.com/tanweai)
 - [狼组AboutSecurity](https://github.com/wgpsec/AboutSecurity)
 - [Vulnerability-Wiki](https://github.com/Threekiii/Vulnerability-Wiki)
+- [第二届腾讯云黑客松智能渗透挑战赛](https://zc.tencent.com/hackathon?code=cha004)
