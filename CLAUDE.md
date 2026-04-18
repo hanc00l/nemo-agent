@@ -26,9 +26,9 @@
    │     └─ 否 → 跳过此步骤
 4. 漏洞测试 → XSS/SQLi/IDOR/SSTI/命令注入/SSRF
 5. 漏洞利用 → 获取 FLAG
-   ├─ SSRF 确认？ → cloud/ssrf-to-cloud + metadata-service → 云凭证
-   ├─ 云指标命中？ → cloud/ 技能（容器/存储桶/AK利用）
-   ├─ AI 指标命中？ → ai-security/ 技能（提示注入/LLM API）
+   ├─ SSRF 确认？ → auxiliary/cloud/cloud-metadata → 云凭证
+   ├─ 云指标命中？ → 云安全工具（lc/cloudsword/cf）
+   ├─ AI 指标命中？ → auxiliary/ai-security/ 技能（提示注入）
    └─ 常规 Web 利用
 6. 立即提交 → competition.submit_answer()
 7. 保存结果 → note.append_note("result", flag)
@@ -183,15 +183,14 @@ detail = read_vuln_file("framework/ThinkPHP5-5.0.23-远程代码执行漏洞.md"
 
 | 赛区 | 优先攻击 | 附加技能 |
 |------|----------|----------|
-| Zone 1 | Web 漏洞 | sqlmap, xray, business-logic |
-| Zone 2 | Zone1 + CVE/云/AI | nuclei, vulhub, vulnerability-wiki, cloud, ai-security |
-| Zone 3 | Zone1+2 + 内网 | fscan, netexec, mimikatz, frp, stowaway, 多级代理 |
+| Zone 1 | Web 漏洞 | auxiliary/exploit（22种攻击方法）, sqlmap, xray |
+| Zone 2 | Zone1 + CVE/云/AI | nuclei, vulhub, vulnerability-wiki, auxiliary/cloud, auxiliary/ai-security |
+| Zone 3 | Zone1+2 + 内网 | fscan, netexec, mimikatz, frp, stowaway, auxiliary/lateral, auxiliary/postexploit, 多级代理 |
 
 ## 技能索引
 
 ### 核心技能
 - [reporting](claude-code/.claude/skills/pentest/reporting/SKILL.md) — 解题报告
-- [business-logic](claude-code/.claude/skills/pentest/business-logic/SKILL.md) — 业务逻辑漏洞
 
 ### MCP 工具技能
 - [browser](claude-code/.claude/skills/pentest/browser/SKILL.md) — Playwright 浏览器操作
@@ -199,31 +198,30 @@ detail = read_vuln_file("framework/ThinkPHP5-5.0.23-远程代码执行漏洞.md"
 - [note](claude-code/.claude/skills/pentest/note/SKILL.md) — 笔记存储
 - [competition](claude-code/.claude/skills/pentest/competition/SKILL.md) — 竞赛平台 API
 - [reverse](claude-code/.claude/skills/pentest/reverse/SKILL.md) — 反连/JNDI 注入
-
-### Web 安全（Zone 1）
-
-### CVE / 知识库（Zone 2）
 - [jndi-exploit](claude-code/.claude/skills/pentest/reverse/jndi-exploit.md) — JNDI 注入利用
-- [vulnerability-wiki](claude-code/.claude/skills/pentest/vulnerability-wiki/SKILL.md) — 漏洞知识库
-- [vulhub](claude-code/.claude/skills/pentest/vulhub/SKILL.md) — 漏洞环境知识库
-- [cloud/](claude-code/.claude/skills/pentest/cloud/SKILL.md) — 云安全总览
-- [metadata-service](claude-code/.claude/skills/pentest/cloud/metadata-service.md) — 云元数据服务利用
-- [storage-security](claude-code/.claude/skills/pentest/cloud/storage-security.md) — 对象存储安全测试
-- [container-security](claude-code/.claude/skills/pentest/cloud/container-security.md) — 容器与 K8s 安全
-- [ssrf-to-cloud](claude-code/.claude/skills/pentest/cloud/ssrf-to-cloud.md) — SSRF 到云攻击链
-- 工具: [lc](claude-code/.claude/skills/pentest/cloud/tools/lc.md) / [cloudsword](claude-code/.claude/skills/pentest/cloud/tools/cloudsword.md) / [cf](claude-code/.claude/skills/pentest/cloud/tools/cf.md) — 多云资产梳理 / 云安全综合测试 / 云环境利用框架
-- [ai-security/](claude-code/.claude/skills/pentest/ai-security/SKILL.md) — AI 安全总览
-- [prompt-injection](claude-code/.claude/skills/pentest/ai-security/prompt-injection.md) — 提示词注入攻击
-- [llm-api](claude-code/.claude/skills/pentest/ai-security/llm-api.md) — LLM API 安全测试
+
+### 辅助技能（auxiliary/）
+- [auxiliary 总览](claude-code/.claude/skills/pentest/auxiliary/SKILL.md) — 辅助技能索引
+- 攻击方法（exploit/）：sql-injection / xss / ssti / ssrf / command-injection / lfi-rfi / idor / jwt / xxe / nosql / ldap / csrf / graphql / websocket / deserialization / java-deserialization / file-upload / race-condition / supply-chain / cve-exploit / web-vuln-scan / business-logic-attack
+- 横向移动（lateral/）：ad-domain-attack / adcs-attack / exchange-to-domain / internal-recon / lateral-movement / ntlm-relay-attack
+- 后渗透（postexploit/）：post-exploit-linux / post-exploit-windows
+- 云安全（cloud/）：cloud-metadata
+- AI 安全（ai-security/）：prompt-injection
+- 通用（general/）：efficiency-rules
+
+### 知识库（Zone 2）
+- [vulnerability-wiki](claude-code/.claude/skills/pentest/vulnerability-wiki/SKILL.md) — 1123+ 漏洞知识库
+- [vulhub](claude-code/.claude/skills/pentest/vulhub/SKILL.md) — 317 漏洞环境知识库
 
 ### 内网渗透（Zone 3）
 - [internal/](claude-code/.claude/skills/pentest/internal/SKILL.md) — 内网渗透总览
 - [zone3-workflow](claude-code/.claude/skills/pentest/internal/workflow/SKILL.md) — Zone 3 递归渗透
 - [info-gathering](claude-code/.claude/skills/pentest/internal/info-gathering/SKILL.md) — 内网信息收集
 - [post-exploitation](claude-code/.claude/skills/pentest/internal/post-exploitation/SKILL.md) — 后渗透操作
+- [privilege-escalation](claude-code/.claude/skills/pentest/internal/privilege-escalation/SKILL.md) — 权限提升
 - [tools-upload](claude-code/.claude/skills/pentest/internal/tools-upload/SKILL.md) — 工具上传
 - [multi-hop-proxy](claude-code/.claude/skills/pentest/internal/multi-hop-proxy/SKILL.md) — 多级代理
-- 工具: [frp](claude-code/.claude/skills/pentest/internal/tools/frp.md) / [chisel](claude-code/.claude/skills/pentest/internal/tools/chisel.md) / [stowaway](claude-code/.claude/skills/pentest/internal/tools/stowaway.md) / [fscan](claude-code/.claude/skills/pentest/internal/tools/fscan.md) / [netexec](claude-code/.claude/skills/pentest/internal/tools/netexec.md) / [mimikatz](claude-code/.claude/skills/pentest/internal/tools/mimikatz.md) / [neo-regeorg](claude-code/.claude/skills/pentest/internal/tools/neo-regeorg.md) / [reverse-shell](claude-code/.claude/skills/pentest/internal/tools/reverse-shell.md) / [file-transfer](claude-code/.claude/skills/pentest/internal/tools/file-transfer.md)
+- 工具: [frp](claude-code/.claude/skills/pentest/internal/tools/frp.md) / [chisel](claude-code/.claude/skills/pentest/internal/tools/chisel.md) / [stowaway](claude-code/.claude/skills/pentest/internal/tools/stowaway.md) / [fscan](claude-code/.claude/skills/pentest/internal/tools/fscan.md) / [netexec](claude-code/.claude/skills/pentest/internal/tools/netexec.md) / [mimikatz](claude-code/.claude/skills/pentest/internal/tools/mimikatz.md) / [neo-regeorg](claude-code/.claude/skills/pentest/internal/tools/neo-regeorg.md) / [reverse-shell](claude-code/.claude/skills/pentest/internal/tools/reverse-shell.md) / [file-transfer](claude-code/.claude/skills/pentest/internal/tools/file-transfer.md) / [proxybridge](claude-code/.claude/skills/pentest/internal/tools/proxybridge.md) / [simple-proxy](claude-code/.claude/skills/pentest/internal/tools/simple-proxy.md)
 - 参考: [privilege-escalation](claude-code/.claude/skills/pentest/internal/references/privilege-escalation.md) / [domain-pentest](claude-code/.claude/skills/pentest/internal/references/domain-pentest.md)
 
 ## 调度系统
@@ -305,7 +303,7 @@ Jupyter 会话自动加载 `toolset` 包，提供 `toolset.browser`、`toolset.t
 | 规则 | 说明 |
 |------|------|
 | 开始前读笔记 | 了解之前的发现和推理 |
-| 30分钟重读 | 重新整理思路，避免死循环（Zone 3 每 20 分钟） |
+| 8分钟重读 | 重新整理思路，避免死循环 |
 | 立即提交 FLAG | 获取后立即提交，防止超时丢失 |
 | 发现即记录 | 重要信息立即保存到笔记 |
 | HTTP exploit 用 Python | 禁止 terminal + curl（bash 二次解析特殊字符） |

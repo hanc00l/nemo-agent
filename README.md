@@ -4,7 +4,7 @@
 
 基于 Claude Code 的自动化渗透测试 Agent，达到中高级网络安全专家水平。
 
-> 目前在开发调试中，文档可能不完善。
+> 题目调度和部份提示词(如：Zone/1-4)是针对第二届腾讯云黑客松智能渗透挑战赛规则定制的；工具固定安装于/opt/workspace目录，未包含在项目中，如若使用请根据skill自动下载。
 
 ## 特性
 
@@ -15,7 +15,7 @@
 - **实时监控**：Web UI（SSE 推送）实时查看解题过程与结果
 - **笔记系统**：自动记录信息收集、推理分析、最终结果
 - **VNC 可视**：支持 VNC 查看浏览器操作过程
-- **技能树**：30+ 技能目录，覆盖 Web/CVE/内网/云/AI 安全
+- **技能树**：50+ 技能目录，覆盖 Web/CVE/内网/云/AI 安全
 - **漏洞知识库**：1123+ 漏洞本地知识库（vulnerability-wiki）+ 317 漏洞环境索引（vulhub）
 - **赛区递进**：Zone 1（Web）→ Zone 2（+CVE/云）→ Zone 3（+内网）
 
@@ -57,11 +57,12 @@
 │  │  └─────────────────────────────────────────────────────┘││
 │  │  ┌─────────────────────────────────────────────────────┐││
 │  │  │  安全工具: nmap│sqlmap│hydra│ffuf│katana│fscan│nuclei│││
-│  │  │  Java: JNDIExploit│JYso│shiro_cli                   │││
+│  │  │  Java: JNDIExploit│JYso│shiro_cli│ysoserial│marshalsec││
 │  │  │  内网: frp│chisel│stowaway│nxc│mimikatz│xray         │││
+│  │  │  云安全: cloudsword│cf│lc                              │││
 │  │  └─────────────────────────────────────────────────────┘││
 │  │  ┌─────────────────────────────────────────────────────┐││
-│  │  │  技能树: web│cve│internal│cloud│ai-security│vulhub   │││
+│  │  │  技能树: auxiliary│internal│vulhub│vulnerability-wiki │││
 │  │  │  知识库: vulnerability-wiki(1123+)│vulhub(317)       │││
 │  │  └─────────────────────────────────────────────────────┘││
 │  └─────────────────────────────────────────────────────────┘│
@@ -109,9 +110,9 @@ cp .env.example .env
 
 ```bash
 # LLM API 配置 (1-3个，至少配置一个)
-LLM-1-ANTHROPIC_BASE_URL=https://api.anthropic.com
+LLM-1-ANTHROPIC_BASE_URL=https://open.bigmodel.cn/api/anthropic
 LLM-1-ANTHROPIC_AUTH_TOKEN=your_token
-LLM-1-ANTHROPIC_MODEL=claude-sonnet-4-5-20250929
+LLM-1-ANTHROPIC_MODEL=GLM-5
 
 # 竞赛平台
 COMPETITION_API_URL=http://192.168.52.1:8888
@@ -257,9 +258,9 @@ API:
 
 | 赛区 | 技能目录 | 覆盖能力（递进包含） |
 |------|----------|----------|
-| **Zone 1** | web/ | Web 漏洞、Java 反序列化、OA 系统 |
-| **Zone 2** | Zone 1 + cve/, vulhub/, vulnerability-wiki/, cloud/, ai-security/ | + CVE + 知识库 + 云 + AI |
-| **Zone 3** | Zone 1+2 + internal/ | + 内网渗透、横向移动、多级代理 |
+| **Zone 1** | auxiliary/exploit/ | Web 漏洞（22种攻击方法） |
+| **Zone 2** | Zone 1 + auxiliary/cloud/, auxiliary/ai-security/, vulhub/, vulnerability-wiki/ | + CVE + 知识库 + 云 + AI |
+| **Zone 3** | Zone 1+2 + internal/, auxiliary/lateral/, auxiliary/postexploit/ | + 内网渗透、横向移动、多级代理 |
 
 ### 安全工具
 
@@ -293,6 +294,8 @@ API:
 | JNDIExploit | /opt/workspace/JNDIExploit/ | JNDI 注入利用 |
 | JYso | /opt/workspace/JYso/ | Java 反序列化 |
 | shiro_cli | /opt/workspace/shiro/ | Shiro 反序列化 |
+| ysoserial | /opt/workspace/ysoserial/ | Java 原生反序列化 Payload 生成 |
+| marshalsec | /opt/workspace/marshalsec/ | Java Marshalling 漏洞 + JNDI/RMI/LDAP 引导服务 |
 
 #### 内网渗透
 
@@ -305,6 +308,14 @@ API:
 | nxc (NetExec) | /opt/workspace/NetExec/ | 横向移动（SMB/SSH/WinRM） |
 | mimikatz | /opt/workspace | Windows 凭证提取 |
 
+#### 云安全
+
+| 工具 | 来源 | 用途 |
+|------|------|------|
+| cloudsword | /opt/workspace/cloudsword | 云安全综合测试 |
+| cf | /opt/workspace/cf | 云环境利用框架 |
+| lc | /opt/workspace/lc | 多云攻击面资产梳理 |
+
 #### Webshell / 其他
 
 | 工具 | 来源 | 用途 |
@@ -316,7 +327,7 @@ API:
 
 ### 技能树
 
-Agent 通过 `.claude/skills/pentest/` 下的 30+ 技能文件获得领域知识：
+Agent 通过 `.claude/skills/pentest/` 下的 50+ 技能文件获得领域知识：
 
 ```
 skills/pentest/
@@ -325,40 +336,43 @@ skills/pentest/
 ├── terminal/SKILL.md           # Tmux 终端操作
 ├── note/SKILL.md               # 笔记存储
 ├── competition/SKILL.md        # 竞赛平台 API
+├── reporting/SKILL.md          # 解题报告
 ├── reverse/                    # 反连/JNDI
 │   ├── SKILL.md                # 反弹 Shell 管理
 │   └── jndi-exploit.md         # JNDI 注入利用
 ├── core/
-│   ├── reconnaissance/SKILL.md # 手动/主动侦察
-│   ├── vulnerability-testing/  # 漏洞测试与利用
-│   ├── ctf-workflow/           # 竞赛流程与超时规则
-│   └── reporting/              # 解题报告
-├── web/                        # Web 安全（Zone 1）
-│   ├── SKILL.md                # 企业级 Web 漏洞
-│   ├── xray.md                 # 被动代理扫描
-│   ├── sqlmap.md               # SQL 注入
-│   ├── waf-bypass.md           # WAF 绕过
-│   ├── java-deserialization.md # Java 反序列化（JYso）
-│   ├── shiro.md / fastjson.md / spring-boot.md  # 框架漏洞
-│   ├── wsh.md                  # Webshell 管理
-│   ├── tools/weevely3.md       # PHP Webshell
-│   └── oa-systems/             # OA 系统专项
-├── cve/                        # CVE 利用（Zone 2）
-│   ├── SKILL.md                # CVE 利用方法论
-│   ├── exploits/log4j.md       # 特定 CVE payload
-│   └── tools/nuclei.md         # nuclei 三阶段扫描
+│   └── vulnerability-testing/  # 漏洞测试与利用
+├── auxiliary/                  # 辅助技能（AboutSecurity 整合）
+│   ├── SKILL.md                # 辅助技能索引
+│   ├── exploit/                # 22 种攻击方法
+│   │   ├── sql-injection / xss / ssti / ssrf / command-injection
+│   │   ├── lfi-rfi / idor / jwt / xxe / nosql / ldap / csrf
+│   │   ├── graphql / websocket / race-condition / file-upload
+│   │   ├── deserialization / java-deserialization
+│   │   ├── supply-chain-audit / cve-exploit / web-vuln-scan
+│   │   └── business-logic-attack
+│   ├── lateral/                # 横向移动
+│   │   ├── ad-domain-attack / adcs-attack
+│   │   ├── exchange-to-domain / internal-recon
+│   │   ├── lateral-movement / ntlm-relay-attack
+│   ├── postexploit/            # 后渗透
+│   │   ├── post-exploit-linux / post-exploit-windows
+│   ├── cloud/                  # 云安全
+│   │   └── cloud-metadata
+│   ├── ai-security/            # AI 安全
+│   │   └── prompt-injection
+│   └── general/                # 通用
+│       └── efficiency-rules
 ├── vulnerability-wiki/         # 1123+ 漏洞知识库（本地文件读取）
 ├── vulhub/                     # 317 漏洞环境索引（本地 JSON 索引）
 │   ├── categories/             # 16 个分类文件
 │   ├── exploits/               # 漏洞复现模板
 │   └── index/                  # 主索引 + 应用分类映射
-├── cloud/                      # 云安全（metadata-service 等）
-├── ai-security/                # AI 基础设施安全（prompt-injection 等）
-├── business-logic/             # 业务逻辑漏洞
 └── internal/                   # 内网渗透（Zone 3）
     ├── SKILL.md                # 内网渗透总览
     ├── info-gathering/         # 内网信息收集
     ├── post-exploitation/      # 后渗透操作
+    ├── privilege-escalation/   # 权限提升
     ├── multi-hop-proxy/        # 多级代理
     ├── tools-upload/           # 工具上传
     ├── workflow/               # Zone 3 递归工作流
@@ -385,7 +399,7 @@ nemo-agent/
 │   │   │   └── pentest-agent.md # 渗透测试 Agent 定义
 │   │   ├── commands/
 │   │   │   └── pentest.md       # /pentest 命令
-│   │   └── skills/pentest/      # 技能树（30+ 目录）
+│   │   └── skills/pentest/      # 技能树（50+ 目录）
 │   ├── .mcp.json               # MCP 配置（sandbox 服务）
 │   ├── meta-tooling/
 │   │   ├── service/
@@ -401,7 +415,8 @@ nemo-agent/
 │   ├── setup_symlinks.sh       # 工具软链接创建
 │   ├── start_claude.sh         # Claude Code 启动脚本
 │   ├── install_ubuntu.sh       # Ubuntu 环境安装
-│   └── install_claude.sh       # Claude Code 安装（国内镜像）
+│   ├── install_claude.sh       # Claude Code 安装（国内镜像）
+│   └── install_all.sh          # 一键完整安装
 ├── task/                       # 任务调度系统
 │   ├── scheduler.py            # 挑战调度器（双层管理）
 │   ├── solver.py               # 单题求解器（多 LLM 并行）
@@ -444,13 +459,15 @@ nemo-agent/
 |------|------|--------|
 | `MAX_LLM` | 每题并行 LLM 数 (1-3) | 3 |
 | `MAX_PARALLEL` | 最大并行挑战数 | 3 |
-| `TIMEOUT_SECONDS` | 单挑战超时 (秒) | 3600 |
+| `TIMEOUT_SECONDS` | 单挑战超时 (秒) | 2400 |
 | `FETCH_INTERVAL` | 平台获取间隔 (秒) | 60 |
 | `DOCKER_IMAGE` | Docker 镜像 | nemo-agent/sandbox:1.0 |
 | `NOTE_PATH` | 笔记存储路径 | /opt/notes |
 | `NOTEBOOK_PATH` | Jupyter Notebook 路径 | /opt/scripts |
 | `WORKSPACE_PATH` | 工作目录路径 | /opt/workspace |
-| `NO_VISION` | 禁用 VNC | false |
+| `NO_VISION` | 禁用 VNC | true |
+| `NETWORK_MODE` | Docker 网络模式 | bridge |
+| `REVERSE_IP` | 反弹 IP（目标回连地址） | - |
 | `VNC_BASE_PORT` | VNC 基础端口 | 55900 |
 | `AGENT_TOKEN` | 平台认证令牌 | - |
 | `COMPETITION_API_URL` | 竞赛平台 URL | http://host.docker.internal |
@@ -462,9 +479,9 @@ nemo-agent/
 支持 1-3 个 LLM，通过编号环境变量配置：
 
 ```bash
-LLM-1-ANTHROPIC_BASE_URL=https://api.anthropic.com
-LLM-1-ANTHROPIC_AUTH_TOKEN=sk-ant-xxx
-LLM-1-ANTHROPIC_MODEL=claude-sonnet-4-5-20250929
+LLM-1-ANTHROPIC_BASE_URL=https://open.bigmodel.cn/api/anthropic
+LLM-1-ANTHROPIC_AUTH_TOKEN=your_token
+LLM-1-ANTHROPIC_MODEL=GLM-5
 
 # 可选：第 2、3 个 LLM
 LLM-2-ANTHROPIC_BASE_URL=...
@@ -474,11 +491,11 @@ LLM-2-ANTHROPIC_MODEL=...
 
 ### 独立 Ubuntu 运行环境（可选，主要用于调试）
 
-在前期调试和开发阶段，使用单一的 Ubuntu 虚拟机更方便。可用 `claude-code/install_ubuntu.sh` 快速完成安装：
+在前期调试和开发阶段，使用单一的 Ubuntu 虚拟机更方便。可用 `claude-code/install_all.sh` 一键完成安装：
 
 ```bash
 cd claude-code
-sudo ./install_ubuntu.sh
+sudo ./install_all.sh
 ```
 
 安装内容：
@@ -508,3 +525,5 @@ sudo ./install_ubuntu.sh
 - [TinyCTFer](https://wiki.chainreactors.red/blog/2025/12/01/intent_is_all_you_need/)
 - [Meta-Tooling](https://wiki.chainreactors.red/blog/2025/12/02/intent_engineering_01/)
 - [wooyun-legacy、xianzhi-research](https://github.com/tanweai)
+- [狼组AboutSecurity](https://github.com/wgpsec/AboutSecurity)
+- [Vulnerability-Wiki](https://github.com/Threekiii/Vulnerability-Wiki)
